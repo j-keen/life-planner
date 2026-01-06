@@ -420,15 +420,20 @@ function AddRoutineForm({
         goal: '',
         motto: '',
         memo: '',
+        memos: [],
         todos: [],
         routines: [],
         slots: {},
       };
       if (selectedLevel === 'DAY') {
         period.timeSlots = {
-          morning: [],
-          afternoon: [],
-          evening: [],
+          dawn: [],
+          morning_early: [],
+          morning_late: [],
+          afternoon_early: [],
+          afternoon_late: [],
+          evening_early: [],
+          evening_late: [],
           anytime: [],
         };
       }

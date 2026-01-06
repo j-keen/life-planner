@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Level, Item, Period, LEVEL_CONFIG, LEVELS, TimeSlot, TIME_SLOTS } from '../types/plan';
+import { Level, Item, Period, LEVEL_CONFIG, LEVELS, TimeSlot, TIME_SLOTS, Category, DailyRecord, Mood, AnnualEvent, AnnualEventType } from '../types/plan';
 
 // ═══════════════════════════════════════════════════════════════
 // 유틸리티 함수들
@@ -17,22 +17,70 @@ const createEmptyPeriod = (id: string, level: Level): Period => {
     goal: '',
     motto: '',
     memo: '',
+    memos: [],  // 메모 태그 배열
     todos: [],
     routines: [],
     slots: {},
   };
 
-  // DAY 레벨은 timeSlots 초기화
+  // DAY 레벨은 timeSlots 초기화 (8칸)
   if (level === 'DAY') {
     base.timeSlots = {
-      morning: [],
-      afternoon: [],
-      evening: [],
+      dawn: [],
+      morning_early: [],
+      morning_late: [],
+      afternoon_early: [],
+      afternoon_late: [],
+      evening_early: [],
+      evening_late: [],
       anytime: [],
     };
   }
 
   return base;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 주간 헬퍼 함수 (ISO 주차, 월요일 시작)
+// ═══════════════════════════════════════════════════════════════
+
+// 특정 날짜의 ISO 주차 계산
+export const getISOWeek = (date: Date): number => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7; // 일요일=7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // 목요일 기준
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+};
+
+// ISO 주차의 연도 (1월 초가 전년도 52/53주, 12월 말이 다음해 1주일 수 있음)
+export const getISOWeekYear = (date: Date): number => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // 목요일 기준
+  return d.getUTCFullYear();
+};
+
+// 특정 연도의 특정 ISO 주차의 월요일 날짜 계산
+const getMondayOfWeek = (year: number, week: number): Date => {
+  // 1월 4일은 항상 첫 번째 ISO 주에 포함됨
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = jan4.getDay() || 7; // 일요일=7
+  // 첫 번째 주의 월요일
+  const firstMonday = new Date(jan4);
+  firstMonday.setDate(jan4.getDate() - jan4Day + 1);
+  // 원하는 주의 월요일
+  const targetMonday = new Date(firstMonday);
+  targetMonday.setDate(firstMonday.getDate() + (week - 1) * 7);
+  return targetMonday;
+};
+
+// 특정 날짜가 속한 주의 월요일 계산
+const getMondayOfDate = (date: Date): Date => {
+  const d = new Date(date);
+  const day = d.getDay() || 7; // 일요일=7
+  d.setDate(d.getDate() - day + 1); // 월요일로 이동
+  return d;
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -43,7 +91,7 @@ const createEmptyPeriod = (id: string, level: Level): Period => {
 // YEAR:        "y-2025"
 // QUARTER:     "q-2025-1" ~ "q-2025-4"
 // MONTH:       "m-2025-01" ~ "m-2025-12"
-// WEEK:        "w-2025-01" ~ "w-2025-53"
+// WEEK:        "w-2025-01" ~ "w-2025-53" (ISO 주차)
 // DAY:         "d-2025-01-01"
 
 export const getPeriodId = (level: Level, baseYear: number, params?: {
@@ -159,12 +207,11 @@ export const getChildPeriodIds = (parentId: string, baseYear: number): string[] 
       break;
 
     case 'WEEK':
-      // 7일
-      for (let d = 1; d <= 7; d++) {
-        // 간단하게 주차 기반으로 일자 계산
-        const weekNum = parsed.week || 1;
-        const dayOfYear = (weekNum - 1) * 7 + d;
-        const date = new Date(parsed.year || baseYear, 0, dayOfYear);
+      // 7일 (월요일 ~ 일요일)
+      const monday = getMondayOfWeek(parsed.year || baseYear, parsed.week || 1);
+      for (let d = 0; d < 7; d++) {
+        const date = new Date(monday);
+        date.setDate(monday.getDate() + d);
         ids.push(getPeriodId('DAY', baseYear, {
           year: date.getFullYear(),
           month: date.getMonth() + 1,
@@ -382,12 +429,14 @@ export const getParentPeriodId = (childId: string, baseYear: number): string | n
       return `m-${parsed.year}-${String(month).padStart(2, '0')}`;
     }
     case 'DAY': {
-      // 일에서 주차 추정
+      // ISO 주차 계산 (월요일 시작)
       const date = new Date(parsed.year!, parsed.month! - 1, parsed.day);
-      const startOfYear = new Date(parsed.year!, 0, 1);
-      const days = Math.floor((date.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-      const weekNum = Math.ceil((days + 1) / 7);
-      return `w-${parsed.year}-${String(weekNum).padStart(2, '0')}`;
+      const weekNum = getISOWeek(date);
+      // ISO 주차의 연도 (12월 말이 1주차일 수 있고, 1월 초가 52/53주차일 수 있음)
+      const thursday = new Date(date);
+      thursday.setDate(date.getDate() + 4 - (date.getDay() || 7));
+      const weekYear = thursday.getFullYear();
+      return `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
     }
     default:
       return null;
@@ -404,6 +453,8 @@ interface PlanStore {
   baseYear: number;
   periods: Record<string, Period>;
   allItems: Record<string, Item>;
+  records: Record<string, DailyRecord>;
+  viewMode: 'plan' | 'record';
 
   // 네비게이션
   setBaseYear: (year: number) => void;
@@ -411,14 +462,22 @@ interface PlanStore {
   drillDown: (childPeriodId: string) => void;
   drillUp: () => void;
 
+  // 뷰 모드 토글
+  setViewMode: (mode: 'plan' | 'record') => void;
+  toggleViewMode: () => void;
+
   // 기간 헤더 수정
   updatePeriodHeader: (field: 'goal' | 'motto' | 'memo', value: string) => void;
+  addMemo: (text: string) => void;
+  removeMemo: (index: number) => void;
 
   // 항목 CRUD
-  addItem: (content: string, to: 'todo' | 'routine', targetCount?: number) => void;
+  addItem: (content: string, to: 'todo' | 'routine', targetCount?: number, category?: Category) => void;
+  updateItemCategory: (itemId: string, category: Category | undefined, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
   deleteItem: (itemId: string, from: 'todo' | 'routine' | 'slot', slotId?: string) => void;
   updateItemContent: (itemId: string, content: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
   updateItemColor: (itemId: string, color: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
+  updateItemNote: (itemId: string, note: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
 
   // 드래그 → 슬롯 배정 (핵심!)
   assignToSlot: (itemId: string, from: 'todo' | 'routine', targetSlotId: string, subContent?: string) => void;
@@ -446,6 +505,26 @@ interface PlanStore {
 
   // 루틴 자동 리셋 (새 기간 진입 시)
   resetRoutinesIfNeeded: (periodId: string) => void;
+
+  // ═══════════════════════════════════════════════════════════════
+  // 기록 (Record) 관련
+  // ═══════════════════════════════════════════════════════════════
+  getRecord: (periodId: string) => DailyRecord | null;
+  updateRecordContent: (periodId: string, content: string) => void;
+  updateRecordMood: (periodId: string, mood: Mood | undefined) => void;
+  addHighlight: (periodId: string, text: string) => void;
+  removeHighlight: (periodId: string, index: number) => void;
+  addGratitude: (periodId: string, text: string) => void;
+  removeGratitude: (periodId: string, index: number) => void;
+
+  // ═══════════════════════════════════════════════════════════════
+  // 연간 기념일 관련
+  // ═══════════════════════════════════════════════════════════════
+  annualEvents: AnnualEvent[];
+  addAnnualEvent: (event: Omit<AnnualEvent, 'id' | 'createdAt'>) => void;
+  updateAnnualEvent: (id: string, updates: Partial<Omit<AnnualEvent, 'id' | 'createdAt'>>) => void;
+  deleteAnnualEvent: (id: string) => void;
+  getUpcomingEvents: (days?: number) => Array<AnnualEvent & { daysUntil: number; nextDate: Date }>;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -461,6 +540,9 @@ export const usePlanStore = create<PlanStore>()(
       baseYear: currentYear,
       periods: {},
       allItems: {},
+      records: {},
+      viewMode: 'plan' as const,
+      annualEvents: [],
 
       setBaseYear: (year) => {
         set({ baseYear: year });
@@ -501,6 +583,15 @@ export const usePlanStore = create<PlanStore>()(
         }
       },
 
+      setViewMode: (mode) => {
+        set({ viewMode: mode });
+      },
+
+      toggleViewMode: () => {
+        const state = get();
+        set({ viewMode: state.viewMode === 'plan' ? 'record' : 'plan' });
+      },
+
       updatePeriodHeader: (field, value) => {
         const { currentPeriodId, ensurePeriod } = get();
         const period = ensurePeriod(currentPeriodId);
@@ -516,7 +607,41 @@ export const usePlanStore = create<PlanStore>()(
         });
       },
 
-      addItem: (content, to, targetCount) => {
+      addMemo: (text) => {
+        const { currentPeriodId, ensurePeriod } = get();
+        const period = ensurePeriod(currentPeriodId);
+        const freshState = get();
+        const currentMemos = period.memos || [];
+
+        set({
+          periods: {
+            ...freshState.periods,
+            [currentPeriodId]: {
+              ...period,
+              memos: [...currentMemos, text],
+            },
+          },
+        });
+      },
+
+      removeMemo: (index) => {
+        const { currentPeriodId, ensurePeriod } = get();
+        const period = ensurePeriod(currentPeriodId);
+        const freshState = get();
+        const currentMemos = period.memos || [];
+
+        set({
+          periods: {
+            ...freshState.periods,
+            [currentPeriodId]: {
+              ...period,
+              memos: currentMemos.filter((_, i) => i !== index),
+            },
+          },
+        });
+      },
+
+      addItem: (content, to, targetCount, category) => {
         const { currentPeriodId, currentLevel, ensurePeriod } = get();
         const period = ensurePeriod(currentPeriodId);
 
@@ -534,6 +659,7 @@ export const usePlanStore = create<PlanStore>()(
           isCompleted: false,
           targetCount,
           currentCount: targetCount,
+          category,
           originPeriodId: currentPeriodId,
           sourceLevel: to === 'routine' ? currentLevel : undefined,
           sourceType: to === 'routine' ? 'routine' : undefined,  // 뱃지 표시용
@@ -550,6 +676,52 @@ export const usePlanStore = create<PlanStore>()(
         set({
           periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
           allItems: { ...freshState.allItems, [newItem.id]: newItem },
+        });
+      },
+
+      updateItemCategory: (itemId, category, location, slotId) => {
+        const state = get();
+        const period = state.periods[state.currentPeriodId];
+        if (!period) return;
+
+        const updateItem = (item: Item) =>
+          item.id === itemId ? { ...item, category } : item;
+
+        const updatedPeriod = { ...period };
+        if (location === 'todo') {
+          updatedPeriod.todos = period.todos.map(updateItem);
+        } else if (location === 'routine') {
+          updatedPeriod.routines = period.routines.map(updateItem);
+        } else if (location === 'slot' && slotId) {
+          if (slotId.includes('_timeslot_')) {
+            // 시간대 슬롯
+            const timeSlot = slotId.split('_timeslot_')[1] as TimeSlot;
+            if (period.timeSlots?.[timeSlot]) {
+              updatedPeriod.timeSlots = {
+                ...period.timeSlots,
+                [timeSlot]: period.timeSlots[timeSlot].map(updateItem),
+              };
+            }
+          } else {
+            // 일반 슬롯
+            if (period.slots[slotId]) {
+              updatedPeriod.slots = {
+                ...period.slots,
+                [slotId]: period.slots[slotId].map(updateItem),
+              };
+            }
+          }
+        }
+
+        // allItems 업데이트
+        const currentItem = state.allItems[itemId];
+        const newAllItems = currentItem
+          ? { ...state.allItems, [itemId]: { ...currentItem, category } }
+          : state.allItems;
+
+        set({
+          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+          allItems: newAllItems,
         });
       },
 
@@ -611,9 +783,13 @@ export const usePlanStore = create<PlanStore>()(
           // timeSlots에서 삭제 (일 뷰)
           if (p.timeSlots) {
             const updatedTimeSlots: Record<TimeSlot, Item[]> = {
-              morning: [],
-              afternoon: [],
-              evening: [],
+              dawn: [],
+              morning_early: [],
+              morning_late: [],
+              afternoon_early: [],
+              afternoon_late: [],
+              evening_early: [],
+              evening_late: [],
               anytime: [],
             };
             let timeSlotsChanged = false;
@@ -638,11 +814,13 @@ export const usePlanStore = create<PlanStore>()(
         // allItems에서 삭제 및 부모 관계 정리
         const newAllItems = { ...state.allItems };
         const item = newAllItems[itemId];
+        let parentIdToUpdate: string | null = null;
 
         // 부모의 childIds에서 제거
         if (item?.parentId) {
           const parent = newAllItems[item.parentId];
           if (parent?.childIds) {
+            parentIdToUpdate = item.parentId;
             newAllItems[item.parentId] = {
               ...parent,
               childIds: parent.childIds.filter((id) => id !== itemId),
@@ -654,6 +832,40 @@ export const usePlanStore = create<PlanStore>()(
         idsToDelete.forEach((id) => {
           delete newAllItems[id];
         });
+
+        // 부모의 childIds 변경을 모든 기간에 동기화
+        if (parentIdToUpdate) {
+          const updatedParent = newAllItems[parentIdToUpdate];
+          Object.keys(updatedPeriods).forEach((periodId) => {
+            const p = updatedPeriods[periodId];
+            if (!p) return;
+
+            const updatedP = { ...p };
+            let needsParentSync = false;
+
+            // todos에서 부모 업데이트
+            const parentInTodos = p.todos.findIndex((i) => i.id === parentIdToUpdate);
+            if (parentInTodos !== -1) {
+              updatedP.todos = p.todos.map((i) =>
+                i.id === parentIdToUpdate ? { ...i, childIds: updatedParent.childIds } : i
+              );
+              needsParentSync = true;
+            }
+
+            // routines에서 부모 업데이트
+            const parentInRoutines = p.routines.findIndex((i) => i.id === parentIdToUpdate);
+            if (parentInRoutines !== -1) {
+              updatedP.routines = p.routines.map((i) =>
+                i.id === parentIdToUpdate ? { ...i, childIds: updatedParent.childIds } : i
+              );
+              needsParentSync = true;
+            }
+
+            if (needsParentSync) {
+              updatedPeriods[periodId] = updatedP;
+            }
+          });
+        }
 
         set({
           periods: updatedPeriods,
@@ -740,6 +952,49 @@ export const usePlanStore = create<PlanStore>()(
         });
       },
 
+      updateItemNote: (itemId, note, location, slotId) => {
+        const state = get();
+        const period = state.periods[state.currentPeriodId];
+        if (!period) return;
+
+        const updater = (item: Item): Item =>
+          item.id === itemId ? { ...item, note } : item;
+
+        const updatedPeriod = { ...period };
+
+        if (location === 'todo') {
+          updatedPeriod.todos = period.todos.map(updater);
+        } else if (location === 'routine') {
+          updatedPeriod.routines = period.routines.map(updater);
+        } else if (location === 'slot' && slotId) {
+          // 시간대 슬롯 체크
+          const parsedTimeSlot = parseTimeSlotId(slotId);
+          if (parsedTimeSlot && period.timeSlots) {
+            const { timeSlot } = parsedTimeSlot;
+            updatedPeriod.timeSlots = {
+              ...period.timeSlots,
+              [timeSlot]: (period.timeSlots[timeSlot] || []).map(updater),
+            };
+          } else {
+            updatedPeriod.slots = {
+              ...period.slots,
+              [slotId]: (period.slots[slotId] || []).map(updater),
+            };
+          }
+        }
+
+        // allItems도 업데이트
+        const newAllItems = { ...state.allItems };
+        if (newAllItems[itemId]) {
+          newAllItems[itemId] = { ...newAllItems[itemId], note };
+        }
+
+        set({
+          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+          allItems: newAllItems,
+        });
+      },
+
       // ═══════════════════════════════════════════════════════════
       // 핵심: 슬롯 배정 (쪼개기)
       // ═══════════════════════════════════════════════════════════
@@ -766,6 +1021,7 @@ export const usePlanStore = create<PlanStore>()(
           content: displayContent,
           isCompleted: false,
           color: originalItem.color,
+          category: originalItem.category,  // 카테고리 복사
           parentId: originalItem.id,
           originPeriodId: currentPeriodId,
           subContent: subContent,
@@ -789,22 +1045,17 @@ export const usePlanStore = create<PlanStore>()(
             i.id === itemId ? updatedOriginal : i
           );
         } else {
-          // 루틴: targetCount가 있는 경우에만 카운트 감소
+          // 루틴: targetCount가 있는 경우 카운트 감소 (0이 되어도 유지)
           if (originalItem.targetCount !== undefined) {
             const newCount = (originalItem.currentCount ?? originalItem.targetCount) - 1;
             const updatedRoutine: Item = {
               ...updatedOriginal,
               currentCount: Math.max(0, newCount),
             };
-
-            // 카운트가 0이면 루틴 목록에서 제거
-            if (newCount <= 0) {
-              updatedPeriod.routines = period.routines.filter((i) => i.id !== itemId);
-            } else {
-              updatedPeriod.routines = period.routines.map((i) =>
-                i.id === itemId ? updatedRoutine : i
-              );
-            }
+            // 카운트가 0이 되어도 부모는 유지 (진행률 표시용)
+            updatedPeriod.routines = period.routines.map((i) =>
+              i.id === itemId ? updatedRoutine : i
+            );
           } else {
             // targetCount가 없으면 할일처럼 그냥 유지
             updatedPeriod.routines = period.routines.map((i) =>
@@ -829,7 +1080,23 @@ export const usePlanStore = create<PlanStore>()(
           ...newItem,
           id: genId(), // 새 ID
           parentId: newItem.id, // 슬롯 아이템이 부모
+          category: originalItem.category,  // 카테고리 복사
         };
+
+        // 슬롯 아이템에 전파된 아이템을 자식으로 추가 (체인 연결)
+        const newItemWithChild: Item = {
+          ...newItem,
+          childIds: [propagatedItem.id],
+        };
+
+        // 슬롯의 아이템도 업데이트
+        updatedPeriod.slots = {
+          ...updatedPeriod.slots,
+          [targetSlotId]: updatedPeriod.slots[targetSlotId].map(item =>
+            item.id === newItem.id ? newItemWithChild : item
+          ),
+        };
+        updatedPeriods[currentPeriodId] = updatedPeriod;
 
         updatedPeriods[targetSlotId] = {
           ...childPeriod,
@@ -840,7 +1107,7 @@ export const usePlanStore = create<PlanStore>()(
           periods: updatedPeriods,
           allItems: {
             ...freshState.allItems,
-            [newItem.id]: newItem,
+            [newItem.id]: newItemWithChild,  // 자식 ID 포함된 버전 저장
             [propagatedItem.id]: propagatedItem,
             [updatedOriginal.id]: updatedOriginal,
           },
@@ -875,6 +1142,7 @@ export const usePlanStore = create<PlanStore>()(
           content: displayContent,
           isCompleted: false,
           color: originalItem.color,
+          category: originalItem.category,  // 카테고리 복사
           subContent: subContent,
           // 출처 정보 (원본의 출처 유지 또는 현재 레벨)
           sourceLevel: originalItem.sourceLevel || currentLevel,
@@ -895,9 +1163,13 @@ export const usePlanStore = create<PlanStore>()(
         // timeSlots 초기화 (없을 경우)
         if (!updatedPeriod.timeSlots) {
           updatedPeriod.timeSlots = {
-            morning: [],
-            afternoon: [],
-            evening: [],
+            dawn: [],
+            morning_early: [],
+            morning_late: [],
+            afternoon_early: [],
+            afternoon_late: [],
+            evening_early: [],
+            evening_late: [],
             anytime: [],
           };
         }
@@ -908,21 +1180,17 @@ export const usePlanStore = create<PlanStore>()(
             i.id === itemId ? updatedOriginal : i
           );
         } else {
-          // 루틴: targetCount가 있는 경우에만 카운트 감소
+          // 루틴: targetCount가 있는 경우 카운트 감소 (0이 되어도 유지)
           if (originalItem.targetCount !== undefined) {
             const newCount = (originalItem.currentCount ?? originalItem.targetCount) - 1;
             const updatedRoutine: Item = {
               ...updatedOriginal,
               currentCount: Math.max(0, newCount),
             };
-
-            if (newCount <= 0) {
-              updatedPeriod.routines = period.routines.filter((i) => i.id !== itemId);
-            } else {
-              updatedPeriod.routines = period.routines.map((i) =>
-                i.id === itemId ? updatedRoutine : i
-              );
-            }
+            // 카운트가 0이 되어도 부모는 유지 (진행률 표시용)
+            updatedPeriod.routines = period.routines.map((i) =>
+              i.id === itemId ? updatedRoutine : i
+            );
           } else {
             updatedPeriod.routines = period.routines.map((i) =>
               i.id === itemId ? updatedOriginal : i
@@ -960,12 +1228,13 @@ export const usePlanStore = create<PlanStore>()(
         const parentItem = sourceList.find((i) => i.id === parentId);
         if (!parentItem) return;
 
-        // 새 하위 항목 생성
+        // 새 하위 항목 생성 (부모의 카테고리 상속)
         const newItem: Item = {
           id: genId(),
           content,
           isCompleted: false,
           color: parentItem.color,
+          category: parentItem.category, // 부모 카테고리 상속
           parentId: parentId,
           originPeriodId: currentPeriodId,
           sourceLevel: currentLevel,
@@ -1051,50 +1320,135 @@ export const usePlanStore = create<PlanStore>()(
         const period = state.periods[state.currentPeriodId];
         if (!period) return;
 
-        const toggle = (item: Item): Item => ({
-          ...item,
-          isCompleted: !item.isCompleted,
+        // allItems 먼저 업데이트
+        const newAllItems = { ...state.allItems };
+        const targetItem = newAllItems[itemId];
+        if (!targetItem) return;
+
+        const newCompletedState = !targetItem.isCompleted;
+        newAllItems[itemId] = { ...targetItem, isCompleted: newCompletedState };
+
+        // 자식들도 같은 상태로 변경 (하위 전파)
+        const updateChildrenRecursive = (parentId: string, completed: boolean) => {
+          const parent = newAllItems[parentId];
+          if (!parent?.childIds) return;
+
+          parent.childIds.forEach((childId) => {
+            const child = newAllItems[childId];
+            if (child) {
+              newAllItems[childId] = { ...child, isCompleted: completed };
+              // 재귀적으로 손자들도 업데이트
+              updateChildrenRecursive(childId, completed);
+            }
+          });
+        };
+        updateChildrenRecursive(itemId, newCompletedState);
+
+        // 부모 체인 업데이트 (자식 완료 시 부모 진행률 체크)
+        const updateParentChain = (childId: string) => {
+          const child = newAllItems[childId];
+          if (!child?.parentId) return;
+
+          const parent = newAllItems[child.parentId];
+          if (!parent?.childIds || parent.childIds.length === 0) return;
+
+          // 부모의 진행률 계산
+          const completedCount = parent.childIds.filter(
+            (cid) => newAllItems[cid]?.isCompleted
+          ).length;
+          const progress = Math.round((completedCount / parent.childIds.length) * 100);
+
+          // 100%면 부모도 완료, 아니면 미완료
+          const shouldBeCompleted = progress === 100;
+          if (parent.isCompleted !== shouldBeCompleted) {
+            newAllItems[parent.id] = { ...parent, isCompleted: shouldBeCompleted };
+            // 재귀적으로 상위 부모도 업데이트
+            updateParentChain(parent.id);
+          }
+        };
+        updateParentChain(itemId);
+
+        // 모든 기간에서 해당 항목 업데이트
+        const updatedPeriods = { ...state.periods };
+
+        Object.keys(updatedPeriods).forEach((periodId) => {
+          const p = updatedPeriods[periodId];
+          if (!p) return;
+
+          let needsUpdate = false;
+          const updatedP = { ...p };
+
+          // 업데이트 함수: allItems의 상태를 반영
+          const syncFromAllItems = (item: Item): Item => {
+            const latest = newAllItems[item.id];
+            if (latest && latest.isCompleted !== item.isCompleted) {
+              return { ...item, isCompleted: latest.isCompleted };
+            }
+            return item;
+          };
+
+          // todos 동기화
+          const syncedTodos = p.todos.map(syncFromAllItems);
+          if (JSON.stringify(syncedTodos) !== JSON.stringify(p.todos)) {
+            updatedP.todos = syncedTodos;
+            needsUpdate = true;
+          }
+
+          // routines 동기화
+          const syncedRoutines = p.routines.map(syncFromAllItems);
+          if (JSON.stringify(syncedRoutines) !== JSON.stringify(p.routines)) {
+            updatedP.routines = syncedRoutines;
+            needsUpdate = true;
+          }
+
+          // slots 동기화
+          const syncedSlots: Record<string, Item[]> = {};
+          let slotsChanged = false;
+          Object.keys(p.slots).forEach((slotKey) => {
+            const syncedSlot = p.slots[slotKey].map(syncFromAllItems);
+            syncedSlots[slotKey] = syncedSlot;
+            if (JSON.stringify(syncedSlot) !== JSON.stringify(p.slots[slotKey])) {
+              slotsChanged = true;
+            }
+          });
+          if (slotsChanged) {
+            updatedP.slots = syncedSlots;
+            needsUpdate = true;
+          }
+
+          // timeSlots 동기화
+          if (p.timeSlots) {
+            const syncedTimeSlots: Record<TimeSlot, Item[]> = {
+              dawn: [],
+              morning_early: [],
+              morning_late: [],
+              afternoon_early: [],
+              afternoon_late: [],
+              evening_early: [],
+              evening_late: [],
+              anytime: [],
+            };
+            let timeSlotsChanged = false;
+            (Object.keys(p.timeSlots) as TimeSlot[]).forEach((ts) => {
+              const syncedSlot = (p.timeSlots![ts] || []).map(syncFromAllItems);
+              syncedTimeSlots[ts] = syncedSlot;
+              if (JSON.stringify(syncedSlot) !== JSON.stringify(p.timeSlots![ts])) {
+                timeSlotsChanged = true;
+              }
+            });
+            if (timeSlotsChanged) {
+              updatedP.timeSlots = syncedTimeSlots;
+              needsUpdate = true;
+            }
+          }
+
+          if (needsUpdate) {
+            updatedPeriods[periodId] = updatedP;
+          }
         });
 
-        const updatedPeriod = { ...period };
-
-        if (location === 'todo') {
-          updatedPeriod.todos = period.todos.map((i) =>
-            i.id === itemId ? toggle(i) : i
-          );
-        } else if (location === 'routine') {
-          updatedPeriod.routines = period.routines.map((i) =>
-            i.id === itemId ? toggle(i) : i
-          );
-        } else if (location === 'slot' && slotId) {
-          // 시간대 슬롯 체크
-          const parsedTimeSlot = parseTimeSlotId(slotId);
-          if (parsedTimeSlot && period.timeSlots) {
-            const { timeSlot } = parsedTimeSlot;
-            updatedPeriod.timeSlots = {
-              ...period.timeSlots,
-              [timeSlot]: (period.timeSlots[timeSlot] || []).map((i) =>
-                i.id === itemId ? toggle(i) : i
-              ),
-            };
-          } else {
-            updatedPeriod.slots = {
-              ...period.slots,
-              [slotId]: (period.slots[slotId] || []).map((i) =>
-                i.id === itemId ? toggle(i) : i
-              ),
-            };
-          }
-        }
-
-        // allItems 업데이트
-        const newAllItems = { ...state.allItems };
-        if (newAllItems[itemId]) {
-          newAllItems[itemId] = toggle(newAllItems[itemId]);
-        }
-
         set({
-          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+          periods: updatedPeriods,
           allItems: newAllItems,
         });
       },
@@ -1184,6 +1538,192 @@ export const usePlanStore = create<PlanStore>()(
           });
         }
       },
+
+      // ═══════════════════════════════════════════════════════════
+      // 기록 (Record) 관련 액션
+      // ═══════════════════════════════════════════════════════════
+      getRecord: (periodId: string) => {
+        const state = get();
+        return state.records[periodId] || null;
+      },
+
+      updateRecordContent: (periodId: string, content: string) => {
+        const state = get();
+        const now = new Date().toISOString();
+        const existing = state.records[periodId];
+
+        const updated: DailyRecord = existing
+          ? { ...existing, content, updatedAt: now }
+          : {
+              id: genId(),
+              periodId,
+              content,
+              highlights: [],
+              gratitude: [],
+              createdAt: now,
+              updatedAt: now,
+            };
+
+        set({
+          records: { ...state.records, [periodId]: updated },
+        });
+      },
+
+      updateRecordMood: (periodId: string, mood: Mood | undefined) => {
+        const state = get();
+        const now = new Date().toISOString();
+        const existing = state.records[periodId];
+
+        const updated: DailyRecord = existing
+          ? { ...existing, mood, updatedAt: now }
+          : {
+              id: genId(),
+              periodId,
+              content: '',
+              mood,
+              highlights: [],
+              gratitude: [],
+              createdAt: now,
+              updatedAt: now,
+            };
+
+        set({
+          records: { ...state.records, [periodId]: updated },
+        });
+      },
+
+      addHighlight: (periodId: string, text: string) => {
+        const state = get();
+        const now = new Date().toISOString();
+        const existing = state.records[periodId];
+
+        const updated: DailyRecord = existing
+          ? { ...existing, highlights: [...existing.highlights, text], updatedAt: now }
+          : {
+              id: genId(),
+              periodId,
+              content: '',
+              highlights: [text],
+              gratitude: [],
+              createdAt: now,
+              updatedAt: now,
+            };
+
+        set({
+          records: { ...state.records, [periodId]: updated },
+        });
+      },
+
+      removeHighlight: (periodId: string, index: number) => {
+        const state = get();
+        const existing = state.records[periodId];
+        if (!existing) return;
+
+        const newHighlights = [...existing.highlights];
+        newHighlights.splice(index, 1);
+
+        set({
+          records: {
+            ...state.records,
+            [periodId]: {
+              ...existing,
+              highlights: newHighlights,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        });
+      },
+
+      addGratitude: (periodId: string, text: string) => {
+        const state = get();
+        const now = new Date().toISOString();
+        const existing = state.records[periodId];
+
+        const updated: DailyRecord = existing
+          ? { ...existing, gratitude: [...existing.gratitude, text], updatedAt: now }
+          : {
+              id: genId(),
+              periodId,
+              content: '',
+              highlights: [],
+              gratitude: [text],
+              createdAt: now,
+              updatedAt: now,
+            };
+
+        set({
+          records: { ...state.records, [periodId]: updated },
+        });
+      },
+
+      removeGratitude: (periodId: string, index: number) => {
+        const state = get();
+        const existing = state.records[periodId];
+        if (!existing) return;
+
+        const newGratitude = [...existing.gratitude];
+        newGratitude.splice(index, 1);
+
+        set({
+          records: {
+            ...state.records,
+            [periodId]: {
+              ...existing,
+              gratitude: newGratitude,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        });
+      },
+
+      // ═══════════════════════════════════════════════════════════════
+      // 연간 기념일 CRUD
+      // ═══════════════════════════════════════════════════════════════
+      addAnnualEvent: (event) => {
+        const newEvent: AnnualEvent = {
+          ...event,
+          id: genId(),
+          createdAt: new Date().toISOString(),
+        };
+        set({ annualEvents: [...get().annualEvents, newEvent] });
+      },
+
+      updateAnnualEvent: (id, updates) => {
+        set({
+          annualEvents: get().annualEvents.map((e) =>
+            e.id === id ? { ...e, ...updates } : e
+          ),
+        });
+      },
+
+      deleteAnnualEvent: (id) => {
+        set({
+          annualEvents: get().annualEvents.filter((e) => e.id !== id),
+        });
+      },
+
+      getUpcomingEvents: (days = 30) => {
+        const events = get().annualEvents;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        return events
+          .map((event) => {
+            // 올해 날짜로 계산
+            let nextDate = new Date(today.getFullYear(), event.month - 1, event.day);
+
+            // 이미 지났으면 내년으로
+            if (nextDate < today) {
+              nextDate = new Date(today.getFullYear() + 1, event.month - 1, event.day);
+            }
+
+            const daysUntil = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+            return { ...event, daysUntil, nextDate };
+          })
+          .filter((e) => e.daysUntil <= days)
+          .sort((a, b) => a.daysUntil - b.daysUntil);
+      },
     }),
     {
       name: 'life-planner-storage',
@@ -1191,6 +1731,8 @@ export const usePlanStore = create<PlanStore>()(
         baseYear: state.baseYear,
         periods: state.periods,
         allItems: state.allItems,
+        records: state.records,
+        annualEvents: state.annualEvents,
       }),
     }
   )

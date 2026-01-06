@@ -21,8 +21,37 @@ import {
   parsePeriodId,
   getTimeSlotId,
   getAdjacentPeriodId,
+  getISOWeek,
+  getISOWeekYear,
 } from '../store/usePlanStore';
-import { Item, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX } from '../types/plan';
+import { Item, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX, Category, CATEGORIES, CATEGORY_CONFIG } from '../types/plan';
+
+// ═══════════════════════════════════════════════════════════════
+// 카테고리별 힌트 텍스트
+// ═══════════════════════════════════════════════════════════════
+const CATEGORY_PLACEHOLDER: Record<Category, { todo: string; routine: string }> = {
+  work: { todo: '+ 보고서 작성', routine: '+ 이메일 확인 / 2' },
+  health: { todo: '+ 건강검진 예약', routine: '+ 운동 / 3' },
+  relationship: { todo: '+ 부모님 전화', routine: '+ 연락하기 / 2' },
+  finance: { todo: '+ 공과금 납부', routine: '+ 가계부 정리 / 1' },
+  growth: { todo: '+ 책 구매', routine: '+ 독서 30분 / 5' },
+  uncategorized: { todo: '+ 할일 추가', routine: '+ 루틴 / 횟수' },
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 카테고리 실제 border 색상 (Tailwind 클래스 → 실제 색상)
+// ═══════════════════════════════════════════════════════════════
+const getCategoryBorderColor = (category: Category): string => {
+  const colors: Record<Category, string> = {
+    work: '#3b82f6',        // blue-500
+    health: '#22c55e',      // green-500
+    relationship: '#f43f5e', // rose-500
+    finance: '#f59e0b',     // amber-500
+    growth: '#a855f7',      // purple-500
+    uncategorized: '#9ca3af', // gray-400
+  };
+  return colors[category];
+};
 
 // ═══════════════════════════════════════════════════════════════
 // 색상 선택 메뉴
@@ -63,6 +92,113 @@ function ColorMenu({
         />
       ))}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 메모 팝업 모달
+// ═══════════════════════════════════════════════════════════════
+function NoteModal({
+  item,
+  onSave,
+  onClose,
+}: {
+  item: Item;
+  onSave: (note: string) => void;
+  onClose: () => void;
+}) {
+  const [noteValue, setNoteValue] = useState(item.note || '');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  const handleSave = () => {
+    onSave(noteValue);
+    onClose();
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={handleBackdropClick}
+    >
+      <div
+        ref={modalRef}
+        className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 모달 헤더 */}
+        <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border-b border-amber-200">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-600">📝</span>
+            <span className="font-semibold text-slate-700 truncate max-w-[250px]">{item.content}</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-amber-200 text-slate-500 hover:text-slate-700 transition-colors"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* 모달 본문 */}
+        <div className="p-4">
+          <textarea
+            ref={textareaRef}
+            value={noteValue}
+            onChange={(e) => setNoteValue(e.target.value)}
+            placeholder="상세 메모를 입력하세요..."
+            className="w-full h-40 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent resize-none"
+          />
+        </div>
+
+        {/* 모달 푸터 */}
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-t border-slate-200">
+          <button
+            onClick={() => {
+              setNoteValue('');
+              onSave('');
+              onClose();
+            }}
+            className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            메모 삭제
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-4 py-1.5 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium"
+            >
+              저장
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -124,7 +260,7 @@ function EditableText({
   return (
     <span
       onClick={() => setIsEditing(true)}
-      className={`cursor-text hover:bg-gray-100 rounded px-1 ${className}`}
+      className={`cursor-text hover:bg-gray-100 rounded px-1 block overflow-hidden text-ellipsis whitespace-nowrap ${className}`}
     >
       {value || <span className="text-gray-400">클릭하여 편집...</span>}
     </span>
@@ -190,31 +326,29 @@ function DraggableItem({
         {...listeners}
         {...attributes}
         className={`
-          group relative flex items-center gap-1.5 p-2 rounded-lg border cursor-grab
-          ${item.color || 'bg-white'} border-gray-200
+          group relative flex items-center gap-2 px-2 py-1.5 rounded-lg border cursor-grab
+          ${item.color || 'bg-white'} border-slate-200
           ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
-          ${item.isCompleted ? 'opacity-60' : ''}
-          hover:shadow-md hover:border-blue-300 transition-all
+          ${item.isCompleted ? 'bg-green-50 border-green-300' : ''}
+          hover:shadow-md hover:border-blue-400 transition-all
         `}
-        style={{ marginLeft: depth * 20 }}
+        style={{ marginLeft: depth * 16 }}
         onContextMenu={(e) => {
           e.preventDefault();
           setShowColorMenu(true);
         }}
       >
         {/* 접기/펼치기 버튼 (자식이 있을 때만) */}
-        {hasChildren ? (
+        {hasChildren && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               onToggleExpand();
             }}
-            className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            className="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded flex-shrink-0 text-[10px]"
           >
             {item.isExpanded ? '▼' : '▶'}
           </button>
-        ) : (
-          <div className="w-5" /> /* 공간 유지 */
         )}
 
         {/* 체크박스 */}
@@ -222,59 +356,56 @@ function DraggableItem({
           type="checkbox"
           checked={item.isCompleted}
           onChange={onToggle}
-          className="w-4 h-4 cursor-pointer accent-blue-500"
+          className="w-4 h-4 cursor-pointer accent-blue-500 flex-shrink-0"
           onClick={(e) => e.stopPropagation()}
         />
 
         {/* 내용 (편집 가능) */}
-        <div className={`flex-1 text-sm ${item.isCompleted ? 'line-through text-gray-400' : ''}`}>
-          <EditableText value={item.content} onSave={onContentChange} />
+        <div className={`flex-1 min-w-0 text-sm ${item.isCompleted ? 'line-through text-gray-400' : ''}`}>
+          <EditableText value={item.content} onSave={onContentChange} className="truncate" />
         </div>
 
-        {/* 달성률 표시 */}
-        {progress !== undefined && progress > 0 && (
-          <div className="flex items-center gap-1">
-            <div className="w-10 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-500 rounded-full transition-all"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <span className="text-[10px] text-blue-600 font-medium">{progress}%</span>
-          </div>
+        {/* 달성률 표시 (자식이 있는 항목) */}
+        {hasChildren && progress !== undefined && (
+          <span className={`text-[10px] font-bold flex-shrink-0 ${
+            progress === 100 ? 'text-green-600' : 'text-blue-600'
+          }`}>{progress}%</span>
         )}
 
         {/* 루틴 카운트 */}
         {showCount && (
-          <span className="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">
+          <span className="text-[10px] font-bold text-purple-600 flex-shrink-0">
             {remaining}/{item.targetCount}
           </span>
         )}
 
-        {/* 쪼개기 버튼 (루트 아이템만) */}
-        {isRoot && (
+        {/* 호버 시 나타나는 액션 버튼들 */}
+        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
+          {/* 쪼개기 버튼 (루트 아이템만) */}
+          {isRoot && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSubInput(!showSubInput);
+              }}
+              className="w-5 h-5 flex items-center justify-center rounded bg-blue-100 text-blue-500 hover:bg-blue-500 hover:text-white transition-all text-xs"
+              title="쪼개기"
+            >
+              +
+            </button>
+          )}
+
+          {/* 삭제 버튼 */}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setShowSubInput(!showSubInput);
+              onDelete();
             }}
-            className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded bg-blue-100 text-blue-500 hover:bg-blue-500 hover:text-white transition-all text-xs"
-            title="쪼개기"
+            className="w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all"
           >
-            +
+            ×
           </button>
-        )}
-
-        {/* 삭제 버튼 */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all"
-        >
-          ×
-        </button>
+        </div>
 
         {/* 색상 메뉴 */}
         {showColorMenu && (
@@ -285,6 +416,7 @@ function DraggableItem({
             />
           </div>
         )}
+
       </div>
 
       {/* 하위 항목 추가 입력 */}
@@ -339,6 +471,7 @@ function GridCell({
   onDrillDown,
   onToggleItem,
   onDeleteItem,
+  onUpdateNote,
 }: {
   slotId: string;
   label: string;
@@ -346,8 +479,10 @@ function GridCell({
   onDrillDown: () => void;
   onToggleItem: (itemId: string) => void;
   onDeleteItem: (itemId: string) => void;
+  onUpdateNote: (itemId: string, note: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: slotId });
+  const [noteModalItem, setNoteModalItem] = useState<Item | null>(null);
 
   const completedCount = items.filter((i) => i.isCompleted).length;
   const totalCount = items.length;
@@ -358,75 +493,115 @@ function GridCell({
       ref={setNodeRef}
       onClick={onDrillDown}
       className={`
-        flex flex-col rounded-xl border-2 cursor-pointer
+        flex flex-col rounded-xl cursor-pointer
         min-h-[140px] transition-all overflow-hidden
-        ${isOver ? 'border-blue-500 bg-blue-50 shadow-lg scale-[1.02]' : 'border-gray-200 hover:border-gray-400 bg-white hover:shadow-md'}
+        ${isOver
+          ? 'border-2 border-blue-500 bg-blue-50 shadow-lg scale-[1.02]'
+          : 'border border-slate-300 bg-white hover:border-blue-400 hover:shadow-md'}
       `}
     >
       {/* 셀 헤더 */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
-        <span className="text-sm font-bold text-gray-700">{label}</span>
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-100 border-b border-slate-200">
+        <span className="text-sm font-bold text-slate-800">{label}</span>
         {totalCount > 0 && (
           <div className="flex items-center gap-2">
-            <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
               <div
-                className="h-full bg-green-500 rounded-full"
+                className={`h-full rounded-full transition-all ${
+                  progress === 100 ? 'bg-green-500' : 'bg-blue-500'
+                }`}
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <span className="text-xs text-gray-500">{progress}%</span>
+            <span className={`text-xs font-bold ${progress === 100 ? 'text-green-600' : 'text-blue-600'}`}>{progress}%</span>
           </div>
         )}
       </div>
 
       {/* 배정된 아이템들 */}
-      <div className="flex-1 p-2 space-y-1 overflow-y-auto">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className={`
-              group flex flex-col gap-0.5 p-1.5 rounded text-xs
-              ${item.color || 'bg-gray-50'} border border-gray-100
-              ${item.isCompleted ? 'opacity-60' : ''}
-              hover:shadow-sm transition-all
-            `}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={item.isCompleted}
-                onChange={() => onToggleItem(item.id)}
-                className="w-3 h-3 accent-blue-500"
-              />
-              <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-                {item.content}
-              </span>
-              <button
-                onClick={() => onDeleteItem(item.id)}
-                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600"
-              >
-                ×
-              </button>
+      <div className="flex-1 p-2 space-y-1.5 overflow-y-auto">
+        {items.map((item) => {
+          const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
+          return (
+            <div
+              key={item.id}
+              className={`
+                group flex flex-col gap-0.5 p-2 rounded-lg text-xs
+                ${item.color || 'bg-slate-50'} border border-slate-200
+                ${item.isCompleted ? 'bg-green-50 border-green-200' : ''}
+                hover:shadow-sm hover:bg-white transition-all
+                ${catConfig ? 'border-l-3' : ''}
+              `}
+              style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setNoteModalItem(item);
+              }}
+            >
+              <div className="flex items-center gap-1.5">
+                {/* 카테고리 dot */}
+                {catConfig && (
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${catConfig.dotColor}`} />
+                )}
+                <input
+                  type="checkbox"
+                  checked={item.isCompleted}
+                  onChange={() => onToggleItem(item.id)}
+                  className="w-3.5 h-3.5 accent-blue-600 rounded"
+                />
+                <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                  {item.content}
+                </span>
+                {/* 메모 뱃지 (메모가 있을 때만) */}
+                {item.note && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setNoteModalItem(item);
+                    }}
+                    className="text-amber-500 hover:text-amber-600 text-[10px]"
+                    title="메모 보기"
+                  >
+                    📝
+                  </button>
+                )}
+                <button
+                  onClick={() => onDeleteItem(item.id)}
+                  className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600 transition-all text-[10px]"
+                >
+                  ×
+                </button>
+              </div>
+              {/* 출처 태그 */}
+              {item.sourceLevel && (
+                <span className={`ml-5 text-[10px] px-1.5 py-0.5 rounded-full w-fit font-medium ${
+                  item.sourceType === 'routine'
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-blue-500 text-white'
+                }`}>
+                  {SOURCE_TAG_PREFIX[item.sourceLevel]} {item.sourceType === 'routine' ? '루틴' : '할일'}
+                </span>
+              )}
             </div>
-            {/* 출처 태그 */}
-            {item.sourceLevel && (
-              <span className={`ml-4 text-[10px] px-1 py-0.5 rounded w-fit ${
-                item.sourceType === 'routine'
-                  ? 'bg-purple-100 text-purple-600'
-                  : 'bg-blue-100 text-blue-600'
-              }`}>
-                {SOURCE_TAG_PREFIX[item.sourceLevel]} {item.sourceType === 'routine' ? '루틴' : '할일'}
-              </span>
-            )}
-          </div>
-        ))}
+          );
+        })}
         {items.length === 0 && (
-          <div className="text-center text-gray-300 text-xs py-4">
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs py-4">
+            <span className="text-2xl mb-1">📥</span>
             드래그하여 추가
           </div>
         )}
       </div>
+
+      {/* 메모 모달 */}
+      {noteModalItem && (
+        <NoteModal
+          item={noteModalItem}
+          onSave={(note) => onUpdateNote(noteModalItem.id, note)}
+          onClose={() => setNoteModalItem(null)}
+        />
+      )}
     </div>
   );
 }
@@ -440,32 +615,43 @@ function TimeSlotCell({
   items,
   onToggleItem,
   onDeleteItem,
+  onUpdateNote,
 }: {
   slotId: string;
   timeSlot: TimeSlot;
   items: Item[];
   onToggleItem: (itemId: string) => void;
   onDeleteItem: (itemId: string) => void;
+  onUpdateNote: (itemId: string, note: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: slotId });
   const config = TIME_SLOT_CONFIG[timeSlot];
+  const [noteModalItem, setNoteModalItem] = useState<Item | null>(null);
 
   const completedCount = items.filter((i) => i.isCompleted).length;
   const totalCount = items.length;
   const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-  // 시간대별 색상
+  // 시간대별 색상 (8칸)
   const slotColors: Record<TimeSlot, string> = {
-    morning: 'from-amber-50 to-orange-50 border-amber-200',
-    afternoon: 'from-sky-50 to-blue-50 border-sky-200',
-    evening: 'from-indigo-50 to-purple-50 border-indigo-200',
+    dawn: 'from-slate-100 to-slate-50 border-slate-300',
+    morning_early: 'from-amber-50 to-yellow-50 border-amber-200',
+    morning_late: 'from-orange-50 to-amber-50 border-orange-200',
+    afternoon_early: 'from-sky-50 to-cyan-50 border-sky-200',
+    afternoon_late: 'from-blue-50 to-sky-50 border-blue-200',
+    evening_early: 'from-indigo-50 to-violet-50 border-indigo-200',
+    evening_late: 'from-purple-50 to-indigo-50 border-purple-200',
     anytime: 'from-gray-50 to-slate-50 border-gray-200',
   };
 
   const headerColors: Record<TimeSlot, string> = {
-    morning: 'bg-amber-100 text-amber-700',
-    afternoon: 'bg-sky-100 text-sky-700',
-    evening: 'bg-indigo-100 text-indigo-700',
+    dawn: 'bg-slate-200 text-slate-700',
+    morning_early: 'bg-amber-100 text-amber-700',
+    morning_late: 'bg-orange-100 text-orange-700',
+    afternoon_early: 'bg-sky-100 text-sky-700',
+    afternoon_late: 'bg-blue-100 text-blue-700',
+    evening_early: 'bg-indigo-100 text-indigo-700',
+    evening_late: 'bg-purple-100 text-purple-700',
     anytime: 'bg-gray-100 text-gray-600',
   };
 
@@ -502,57 +688,85 @@ function TimeSlotCell({
 
       {/* 배정된 아이템들 */}
       <div className="flex-1 p-3 space-y-2 overflow-y-auto">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className={`
-              group flex flex-col gap-1 p-2.5 rounded-lg text-sm
-              ${item.color || 'bg-white'} border border-gray-100 shadow-sm
-              ${item.isCompleted ? 'opacity-60' : ''}
-              hover:shadow-md transition-all
-            `}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={item.isCompleted}
-                onChange={() => onToggleItem(item.id)}
-                className="w-4 h-4 accent-blue-500"
-              />
-              <span className={`flex-1 ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-                {item.content}
-              </span>
-              <button
-                onClick={() => onDeleteItem(item.id)}
-                className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all"
-              >
-                ×
-              </button>
+        {items.map((item) => {
+          const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
+          return (
+            <div
+              key={item.id}
+              className={`
+                group flex flex-col gap-1 p-2.5 rounded-lg text-sm
+                ${item.color || 'bg-white'} border border-gray-100 shadow-sm
+                ${item.isCompleted ? 'opacity-60' : ''}
+                hover:shadow-md transition-all
+              `}
+              style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
+              onDoubleClick={() => setNoteModalItem(item)}
+            >
+              <div className="flex items-center gap-2">
+                {/* 카테고리 dot */}
+                {catConfig && (
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${catConfig.dotColor}`} />
+                )}
+                <input
+                  type="checkbox"
+                  checked={item.isCompleted}
+                  onChange={() => onToggleItem(item.id)}
+                  className="w-4 h-4 accent-blue-500"
+                />
+                <span className={`flex-1 ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                  {item.content}
+                </span>
+                {/* 메모 뱃지 (메모가 있을 때만) */}
+                {item.note && (
+                  <button
+                    onClick={() => setNoteModalItem(item)}
+                    className="text-amber-500 hover:text-amber-600 text-xs"
+                    title="메모 보기"
+                  >
+                    📝
+                  </button>
+                )}
+                <button
+                  onClick={() => onDeleteItem(item.id)}
+                  className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all"
+                >
+                  ×
+                </button>
+              </div>
+              {/* 출처 태그 */}
+              {item.sourceLevel && (
+                <span className={`ml-6 text-xs px-1.5 py-0.5 rounded w-fit ${
+                  item.sourceType === 'routine'
+                    ? 'bg-purple-100 text-purple-600'
+                    : 'bg-blue-100 text-blue-600'
+                }`}>
+                  {SOURCE_TAG_PREFIX[item.sourceLevel]} {item.sourceType === 'routine' ? '루틴' : '할일'}
+                </span>
+              )}
             </div>
-            {/* 출처 태그 */}
-            {item.sourceLevel && (
-              <span className={`ml-6 text-xs px-1.5 py-0.5 rounded w-fit ${
-                item.sourceType === 'routine'
-                  ? 'bg-purple-100 text-purple-600'
-                  : 'bg-blue-100 text-blue-600'
-              }`}>
-                {SOURCE_TAG_PREFIX[item.sourceLevel]} {item.sourceType === 'routine' ? '루틴' : '할일'}
-              </span>
-            )}
-          </div>
-        ))}
+          );
+        })}
         {items.length === 0 && (
           <div className="flex items-center justify-center h-full text-gray-400 text-sm py-8">
             드래그하여 추가
           </div>
         )}
       </div>
+
+      {/* 메모 모달 */}
+      {noteModalItem && (
+        <NoteModal
+          item={noteModalItem}
+          onSave={(note) => onUpdateNote(noteModalItem.id, note)}
+          onClose={() => setNoteModalItem(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 아이템 추가 입력 컴포넌트
+// 아이템 추가 입력 컴포넌트 (간소화)
 // ═══════════════════════════════════════════════════════════════
 function AddItemInput({
   onAdd,
@@ -577,22 +791,14 @@ function AddItemInput({
   };
 
   return (
-    <div className="flex items-center gap-2 mt-3 p-2 bg-gray-50 rounded-lg">
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-        placeholder={placeholder}
-        className="flex-1 px-2 py-1.5 text-sm bg-white border border-gray-200 rounded focus:outline-none focus:border-blue-400"
-      />
-      <button
-        onClick={handleSubmit}
-        className="px-3 py-1.5 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors"
-      >
-        +
-      </button>
-    </div>
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+      placeholder={placeholder}
+      className="w-full px-2 py-1 text-xs bg-transparent border-b border-dashed border-gray-200 focus:outline-none focus:border-gray-400 placeholder-gray-300"
+    />
   );
 }
 
@@ -609,10 +815,13 @@ export default function FractalView() {
     drillDown,
     drillUp,
     updatePeriodHeader,
+    addMemo,
+    removeMemo,
     addItem,
     deleteItem,
     updateItemContent,
     updateItemColor,
+    updateItemNote,
     assignToSlot,
     assignToTimeSlot,
     toggleComplete,
@@ -620,10 +829,13 @@ export default function FractalView() {
     ensurePeriod,
     addSubItem,
     toggleExpand,
+    setBaseYear,
   } = usePlanStore();
 
   const [activeItem, setActiveItem] = useState<{ item: Item; from: 'todo' | 'routine' } | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [editingField, setEditingField] = useState<'goal' | 'motto' | null>(null);
+  const [memoInput, setMemoInput] = useState('');
 
   useEffect(() => setMounted(true), []);
 
@@ -742,62 +954,56 @@ export default function FractalView() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex flex-col h-full bg-gray-100">
+      <div className="flex flex-col h-full bg-slate-100">
         {/* ═══════════════════════════════════════════════════════ */}
-        {/* 헤더 영역 */}
+        {/* 헤더 영역 (2줄 컴팩트) */}
         {/* ═══════════════════════════════════════════════════════ */}
-        <div className="p-4 bg-white border-b shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
+        <div className="px-4 py-2 bg-white border-b-2 border-blue-500 shadow-sm space-y-2">
+          {/* 1줄: 네비게이션 + 목표 + 다짐 + 토글 */}
+          <div className="flex items-center gap-2">
             {/* 뒤로가기 */}
             {currentLevel !== 'THIRTY_YEAR' && (
               <button
                 onClick={drillUp}
-                className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-600 text-sm font-medium"
+                className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-all text-slate-600 text-xs font-medium"
               >
-                ↑ 상위
+                ↑
               </button>
             )}
 
             {/* 네비게이션 그룹 */}
             {currentLevel !== 'THIRTY_YEAR' && (
-              <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                {/* 이전 기간 */}
+              <div className="flex items-center bg-slate-100 rounded-md border border-slate-200">
                 <button
                   onClick={() => {
                     const prevId = getAdjacentPeriodId(currentPeriodId, 'prev', baseYear);
                     if (prevId) usePlanStore.getState().navigateTo(prevId);
                   }}
-                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm transition-all text-gray-600"
-                  title="이전 기간"
+                  className="w-6 h-6 flex items-center justify-center rounded-l-md hover:bg-white transition-all text-slate-500 hover:text-blue-600 text-xs"
                 >
                   ◀
                 </button>
-
-                {/* 현재 기간 표시 */}
-                <div className="px-4 min-w-[160px] text-center">
-                  <span className="font-bold text-gray-800">{getPeriodTitle()}</span>
+                <div className="px-2 min-w-[100px] text-center">
+                  <span className="font-bold text-blue-600 text-sm">{getPeriodTitle()}</span>
                 </div>
-
-                {/* 다음 기간 */}
                 <button
                   onClick={() => {
                     const nextId = getAdjacentPeriodId(currentPeriodId, 'next', baseYear);
                     if (nextId) usePlanStore.getState().navigateTo(nextId);
                   }}
-                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm transition-all text-gray-600"
-                  title="다음 기간"
+                  className="w-6 h-6 flex items-center justify-center rounded-r-md hover:bg-white transition-all text-slate-500 hover:text-blue-600 text-xs"
                 >
                   ▶
                 </button>
               </div>
             )}
 
-            {/* 30년 뷰일 때 제목만 표시 */}
+            {/* 30년 뷰일 때 제목 */}
             {currentLevel === 'THIRTY_YEAR' && (
-              <div className="font-bold text-xl text-gray-800">{getPeriodTitle()}</div>
+              <span className="font-bold text-blue-600 text-sm">{getPeriodTitle()}</span>
             )}
 
-            {/* 현재로 이동 버튼 */}
+            {/* 현재로 이동 */}
             {currentLevel !== 'THIRTY_YEAR' && currentLevel !== 'FIVE_YEAR' && (
               <button
                 onClick={() => {
@@ -805,84 +1011,127 @@ export default function FractalView() {
                   const currentYear = now.getFullYear();
                   const currentMonth = now.getMonth() + 1;
                   let targetId = '';
-
                   switch (currentLevel) {
-                    case 'YEAR':
-                      targetId = `y-${currentYear}`;
-                      break;
-                    case 'QUARTER': {
-                      const q = Math.ceil(currentMonth / 3);
-                      targetId = `q-${currentYear}-${q}`;
-                      break;
-                    }
-                    case 'MONTH':
-                      targetId = `m-${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-                      break;
+                    case 'YEAR': targetId = `y-${currentYear}`; break;
+                    case 'QUARTER': targetId = `q-${currentYear}-${Math.ceil(currentMonth / 3)}`; break;
+                    case 'MONTH': targetId = `m-${currentYear}-${String(currentMonth).padStart(2, '0')}`; break;
                     case 'WEEK': {
-                      const startOfYear = new Date(currentYear, 0, 1);
-                      const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-                      const weekNum = Math.ceil((days + 1) / 7);
-                      targetId = `w-${currentYear}-${String(weekNum).padStart(2, '0')}`;
+                      const weekNum = getISOWeek(now);
+                      const weekYear = getISOWeekYear(now);
+                      targetId = `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
                       break;
                     }
-                    case 'DAY':
-                      targetId = `d-${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                      break;
+                    case 'DAY': targetId = `d-${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; break;
                   }
-
                   if (targetId) usePlanStore.getState().navigateTo(targetId);
                 }}
-                className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all font-medium"
               >
-                {currentLevel === 'DAY' && '오늘'}
-                {currentLevel === 'WEEK' && '이번 주'}
-                {currentLevel === 'MONTH' && '이번 달'}
-                {currentLevel === 'QUARTER' && '이번 분기'}
-                {currentLevel === 'YEAR' && '올해'}
+                {currentLevel === 'DAY' ? '오늘' : currentLevel === 'WEEK' ? '이번주' : currentLevel === 'MONTH' ? '이번달' : currentLevel === 'QUARTER' ? '이번분기' : '올해'}
               </button>
             )}
 
-            {/* 쪼개기 힌트 */}
-            <div className="ml-auto text-xs text-gray-400 flex items-center gap-1">
-              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px]">+</span>
-              <span>버튼으로 쪼개기</span>
+            {/* 구분선 */}
+            <div className="w-px h-5 bg-slate-300" />
+
+            {/* 목표 인라인 입력 */}
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <span className="text-xs text-slate-500 flex-shrink-0">🎯</span>
+              {editingField === 'goal' ? (
+                <input
+                  type="text"
+                  value={period.goal}
+                  onChange={(e) => updatePeriodHeader('goal', e.target.value)}
+                  onBlur={() => setEditingField(null)}
+                  onKeyDown={(e) => e.key === 'Enter' && setEditingField(null)}
+                  placeholder="목표..."
+                  autoFocus
+                  className="flex-1 min-w-0 px-2 py-0.5 text-sm border-b-2 border-blue-500 outline-none bg-transparent"
+                />
+              ) : (
+                <span
+                  onClick={() => setEditingField('goal')}
+                  className={`flex-1 min-w-0 truncate cursor-pointer text-sm px-1 py-0.5 rounded hover:bg-blue-50 ${
+                    period.goal ? 'text-slate-700 font-medium' : 'text-slate-400'
+                  }`}
+                >
+                  {period.goal || '목표 입력...'}
+                </span>
+              )}
+            </div>
+
+            {/* 다짐 인라인 입력 */}
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <span className="text-xs text-slate-500 flex-shrink-0">💪</span>
+              {editingField === 'motto' ? (
+                <input
+                  type="text"
+                  value={period.motto}
+                  onChange={(e) => updatePeriodHeader('motto', e.target.value)}
+                  onBlur={() => setEditingField(null)}
+                  onKeyDown={(e) => e.key === 'Enter' && setEditingField(null)}
+                  placeholder="다짐..."
+                  autoFocus
+                  className="flex-1 min-w-0 px-2 py-0.5 text-sm border-b-2 border-green-500 outline-none bg-transparent"
+                />
+              ) : (
+                <span
+                  onClick={() => setEditingField('motto')}
+                  className={`flex-1 min-w-0 truncate cursor-pointer text-sm px-1 py-0.5 rounded hover:bg-green-50 ${
+                    period.motto ? 'text-slate-700 font-medium' : 'text-slate-400'
+                  }`}
+                >
+                  {period.motto || '다짐 입력...'}
+                </span>
+              )}
+            </div>
+
+            {/* 계획/기록 토글 */}
+            <div className="flex bg-slate-200 rounded-md p-0.5 flex-shrink-0">
+              <button className="px-3 py-1 rounded text-xs font-medium bg-blue-600 text-white">
+                계획
+              </button>
+              <button
+                onClick={() => usePlanStore.getState().toggleViewMode()}
+                className="px-3 py-1 rounded text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                기록
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            {/* 목표 */}
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">목표</label>
-              <input
-                type="text"
-                value={period.goal}
-                onChange={(e) => updatePeriodHeader('goal', e.target.value)}
-                placeholder="이 기간의 목표..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400"
-              />
-            </div>
-            {/* 다짐 */}
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">다짐</label>
-              <input
-                type="text"
-                value={period.motto}
-                onChange={(e) => updatePeriodHeader('motto', e.target.value)}
-                placeholder="다짐..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400"
-              />
-            </div>
-            {/* 메모 */}
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">메모</label>
-              <input
-                type="text"
-                value={period.memo}
-                onChange={(e) => updatePeriodHeader('memo', e.target.value)}
-                placeholder="기억해야 할 것..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400"
-              />
-            </div>
+          {/* 2줄: 메모 태그들 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-500 flex-shrink-0">📝</span>
+            {/* 기존 메모 태그들 */}
+            {(period.memos || []).map((memo, index) => (
+              <span
+                key={index}
+                className="group inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700"
+              >
+                {memo}
+                <button
+                  onClick={() => removeMemo(index)}
+                  className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-amber-200 text-amber-500 hover:text-amber-700 transition-colors"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {/* 메모 추가 입력 */}
+            <input
+              type="text"
+              value={memoInput}
+              onChange={(e) => setMemoInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && memoInput.trim()) {
+                  addMemo(memoInput.trim());
+                  setMemoInput('');
+                }
+              }}
+              placeholder="+ 메모 추가..."
+              className="flex-shrink-0 w-28 px-2 py-0.5 text-xs border border-dashed border-slate-300 rounded-full outline-none focus:border-amber-400 bg-transparent placeholder-slate-400"
+            />
           </div>
         </div>
 
@@ -891,63 +1140,81 @@ export default function FractalView() {
         {/* ═══════════════════════════════════════════════════════ */}
         <div className="flex-1 flex overflow-hidden">
           {/* ─────────────────────────────────────────────────────── */}
-          {/* 좌측 패널: 할일 목록 (트리 구조) */}
+          {/* 좌측 패널: 할일 목록 (카테고리별) */}
           {/* ─────────────────────────────────────────────────────── */}
-          <div className="w-72 p-4 bg-white border-r overflow-y-auto">
-            <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-              <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-              할일 ({period.todos.filter(i => !i.parentId).length})
-            </h2>
-            <div className="space-y-1">
-              {(() => {
-                // 트리 구조로 아이템 렌더링
-                const itemMap = new Map(period.todos.map(i => [i.id, i]));
-                const collapsedParents = new Set<string>();
+          <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto">
+            <div className="p-3 border-b-2 border-blue-500 bg-blue-50">
+              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <span className="text-blue-600">✓</span>
+                할일
+                <span className="text-xs font-medium text-white bg-blue-600 px-2 py-0.5 rounded-full">
+                  {period.todos.filter(t => t.isCompleted).length}/{period.todos.length}
+                </span>
+              </h2>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {CATEGORIES.map((cat) => {
+                const config = CATEGORY_CONFIG[cat];
+                const categoryItems = period.todos.filter(i => i.category === cat);
 
-                // 접힌 부모들 찾기
-                period.todos.forEach(item => {
+                // 트리 구조 헬퍼
+                const itemMap = new Map(categoryItems.map(i => [i.id, i]));
+                const collapsedParents = new Set<string>();
+                categoryItems.forEach(item => {
                   if (item.childIds && item.childIds.length > 0 && !item.isExpanded) {
                     collapsedParents.add(item.id);
                   }
                 });
-
-                // 숨겨야 할 아이템 찾기 (접힌 부모의 자식들)
                 const isHidden = (item: Item): boolean => {
                   if (!item.parentId) return false;
                   if (collapsedParents.has(item.parentId)) return true;
                   const parent = itemMap.get(item.parentId);
                   return parent ? isHidden(parent) : false;
                 };
-
-                // 깊이 계산
                 const getDepth = (item: Item): number => {
                   if (!item.parentId) return 0;
                   const parent = itemMap.get(item.parentId);
                   return parent ? getDepth(parent) + 1 : 0;
                 };
 
-                return period.todos.map((item) => (
-                  <DraggableItem
-                    key={item.id}
-                    item={item}
-                    from="todo"
-                    onToggle={() => toggleComplete(item.id, 'todo')}
-                    onDelete={() => deleteItem(item.id, 'todo')}
-                    onColorChange={(color) => updateItemColor(item.id, color, 'todo')}
-                    onContentChange={(content) => updateItemContent(item.id, content, 'todo')}
-                    onAddSubItem={(content) => addSubItem(item.id, content, 'todo')}
-                    onToggleExpand={() => toggleExpand(item.id, 'todo')}
-                    progress={getProgress(item.id)}
-                    depth={getDepth(item)}
-                    isHidden={isHidden(item)}
-                  />
-                ));
-              })()}
+                return (
+                  <div key={cat} className="p-2 hover:bg-slate-50 transition-colors">
+                    {/* 카테고리 헤더 */}
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${config.dotColor}`} />
+                      <span className="text-xs font-semibold text-slate-700">{config.label}</span>
+                      {categoryItems.length > 0 && (
+                        <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full font-medium">{categoryItems.length}</span>
+                      )}
+                    </div>
+                    {/* 카테고리 아이템 목록 */}
+                    <div className="space-y-1 mb-1">
+                      {categoryItems.map((item) => (
+                        <DraggableItem
+                          key={item.id}
+                          item={item}
+                          from="todo"
+                          onToggle={() => toggleComplete(item.id, 'todo')}
+                          onDelete={() => deleteItem(item.id, 'todo')}
+                          onColorChange={(color) => updateItemColor(item.id, color, 'todo')}
+                          onContentChange={(content) => updateItemContent(item.id, content, 'todo')}
+                          onAddSubItem={(content) => addSubItem(item.id, content, 'todo')}
+                          onToggleExpand={() => toggleExpand(item.id, 'todo')}
+                          progress={getProgress(item.id)}
+                          depth={getDepth(item)}
+                          isHidden={isHidden(item)}
+                        />
+                      ))}
+                    </div>
+                    {/* 카테고리별 추가 입력 */}
+                    <AddItemInput
+                      onAdd={(content) => addItem(content, 'todo', undefined, cat)}
+                      placeholder={CATEGORY_PLACEHOLDER[cat].todo}
+                    />
+                  </div>
+                );
+              })}
             </div>
-            <AddItemInput
-              onAdd={(content) => addItem(content, 'todo')}
-              placeholder="할일 추가..."
-            />
           </div>
 
           {/* ─────────────────────────────────────────────────────── */}
@@ -968,12 +1235,13 @@ export default function FractalView() {
                     onDrillDown={() => drillDown(childId)}
                     onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
                     onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
+                    onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
                   />
                 ))}
               </div>
             ) : (
-              /* DAY 레벨: 시간대 그리드 (4칸 가로 배치) */
-              <div className="grid grid-cols-4 gap-4 h-full">
+              /* DAY 레벨: 시간대 그리드 (8칸: 4열 x 2행) */
+              <div className="grid grid-cols-4 grid-rows-2 gap-3 h-full">
                 {TIME_SLOTS.map((timeSlot) => {
                   const slotId = getTimeSlotId(currentPeriodId, timeSlot);
                   const items = period.timeSlots?.[timeSlot] || [];
@@ -985,6 +1253,7 @@ export default function FractalView() {
                       items={items}
                       onToggleItem={(itemId) => toggleComplete(itemId, 'slot', slotId)}
                       onDeleteItem={(itemId) => deleteItem(itemId, 'slot', slotId)}
+                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', slotId)}
                     />
                   );
                 })}
@@ -993,63 +1262,81 @@ export default function FractalView() {
           </div>
 
           {/* ─────────────────────────────────────────────────────── */}
-          {/* 우측 패널: 루틴 목록 (트리 구조) */}
+          {/* 우측 패널: 루틴 목록 (카테고리별) */}
           {/* ─────────────────────────────────────────────────────── */}
-          <div className="w-72 p-4 bg-white border-l overflow-y-auto">
-            <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-              <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-              루틴 ({period.routines.filter(i => !i.parentId).length})
-            </h2>
-            <div className="space-y-1">
-              {(() => {
-                // 트리 구조로 아이템 렌더링
-                const itemMap = new Map(period.routines.map(i => [i.id, i]));
-                const collapsedParents = new Set<string>();
+          <div className="w-72 bg-white border-l border-slate-200 overflow-y-auto">
+            <div className="p-3 border-b-2 border-purple-500 bg-purple-50">
+              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <span className="text-purple-600">↻</span>
+                루틴
+                <span className="text-xs font-medium text-white bg-purple-600 px-2 py-0.5 rounded-full">
+                  {period.routines.filter(r => r.isCompleted).length}/{period.routines.length}
+                </span>
+              </h2>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {CATEGORIES.map((cat) => {
+                const catConfig = CATEGORY_CONFIG[cat];
+                const categoryItems = period.routines.filter(i => i.category === cat);
 
-                // 접힌 부모들 찾기
-                period.routines.forEach(item => {
+                // 트리 구조 헬퍼
+                const itemMap = new Map(categoryItems.map(i => [i.id, i]));
+                const collapsedParents = new Set<string>();
+                categoryItems.forEach(item => {
                   if (item.childIds && item.childIds.length > 0 && !item.isExpanded) {
                     collapsedParents.add(item.id);
                   }
                 });
-
-                // 숨겨야 할 아이템 찾기 (접힌 부모의 자식들)
                 const isHidden = (item: Item): boolean => {
                   if (!item.parentId) return false;
                   if (collapsedParents.has(item.parentId)) return true;
                   const parent = itemMap.get(item.parentId);
                   return parent ? isHidden(parent) : false;
                 };
-
-                // 깊이 계산
                 const getDepth = (item: Item): number => {
                   if (!item.parentId) return 0;
                   const parent = itemMap.get(item.parentId);
                   return parent ? getDepth(parent) + 1 : 0;
                 };
 
-                return period.routines.map((item) => (
-                  <DraggableItem
-                    key={item.id}
-                    item={item}
-                    from="routine"
-                    onToggle={() => toggleComplete(item.id, 'routine')}
-                    onDelete={() => deleteItem(item.id, 'routine')}
-                    onColorChange={(color) => updateItemColor(item.id, color, 'routine')}
-                    onContentChange={(content) => updateItemContent(item.id, content, 'routine')}
-                    onAddSubItem={(content) => addSubItem(item.id, content, 'routine')}
-                    onToggleExpand={() => toggleExpand(item.id, 'routine')}
-                    progress={getProgress(item.id)}
-                    depth={getDepth(item)}
-                    isHidden={isHidden(item)}
-                  />
-                ));
-              })()}
+                return (
+                  <div key={cat} className="p-2 hover:bg-slate-50 transition-colors">
+                    {/* 카테고리 헤더 */}
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${catConfig.dotColor}`} />
+                      <span className="text-xs font-semibold text-slate-700">{catConfig.label}</span>
+                      {categoryItems.length > 0 && (
+                        <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full font-medium">{categoryItems.length}</span>
+                      )}
+                    </div>
+                    {/* 카테고리 아이템 목록 */}
+                    <div className="space-y-1 mb-1">
+                      {categoryItems.map((item) => (
+                        <DraggableItem
+                          key={item.id}
+                          item={item}
+                          from="routine"
+                          onToggle={() => toggleComplete(item.id, 'routine')}
+                          onDelete={() => deleteItem(item.id, 'routine')}
+                          onColorChange={(color) => updateItemColor(item.id, color, 'routine')}
+                          onContentChange={(content) => updateItemContent(item.id, content, 'routine')}
+                          onAddSubItem={(content) => addSubItem(item.id, content, 'routine')}
+                          onToggleExpand={() => toggleExpand(item.id, 'routine')}
+                          progress={getProgress(item.id)}
+                          depth={getDepth(item)}
+                          isHidden={isHidden(item)}
+                        />
+                      ))}
+                    </div>
+                    {/* 카테고리별 추가 입력 (루틴은 횟수 지원) */}
+                    <AddItemInput
+                      onAdd={(content, count) => addItem(content, 'routine', count, cat)}
+                      placeholder={CATEGORY_PLACEHOLDER[cat].routine}
+                    />
+                  </div>
+                );
+              })}
             </div>
-            <AddItemInput
-              onAdd={(content, count) => addItem(content, 'routine', count)}
-              placeholder="루틴 추가 (예: 운동 / 3)"
-            />
           </div>
         </div>
       </div>

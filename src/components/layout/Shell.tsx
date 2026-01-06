@@ -2,8 +2,10 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePlanStore, getPeriodId } from '@/store/usePlanStore';
+import { usePlanStore, getPeriodId, getISOWeek, getISOWeekYear } from '@/store/usePlanStore';
 import { Level, LEVEL_CONFIG, LEVELS } from '@/types/plan';
+import { ChatAssistant } from '@/components/ChatAssistant';
+import { CloudSync } from '@/components/CloudSync';
 
 interface ShellProps {
   children: React.ReactNode;
@@ -39,12 +41,13 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
       case 'MONTH':
         periodId = getPeriodId('MONTH', baseYear, { year: currentYear, month: currentMonth });
         break;
-      case 'WEEK':
-        const startOfYear = new Date(currentYear, 0, 1);
-        const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-        const weekNum = Math.ceil((days + 1) / 7);
-        periodId = getPeriodId('WEEK', baseYear, { year: currentYear, week: weekNum });
+      case 'WEEK': {
+        // ISO 주차 사용 (1월 초가 전년도 주차, 12월 말이 다음해 주차일 수 있음)
+        const weekNum = getISOWeek(now);
+        const weekYear = getISOWeekYear(now);
+        periodId = getPeriodId('WEEK', baseYear, { year: weekYear, week: weekNum });
         break;
+      }
       case 'DAY':
         periodId = getPeriodId('DAY', baseYear, {
           year: currentYear,
@@ -83,12 +86,23 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* 클라우드 동기화 */}
+          <CloudSync />
+
           {/* 루틴 관리 링크 */}
           <Link
             href="/routines"
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
           >
             루틴 관리
+          </Link>
+
+          {/* 기념일 관리 링크 */}
+          <Link
+            href="/events"
+            className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+          >
+            🎂 기념일
           </Link>
 
           {/* 설정 버튼 */}
@@ -102,24 +116,22 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
 
             {showSettings && (
               <div className="absolute right-0 top-full mt-2 bg-white border shadow-lg rounded-lg p-4 z-50 w-64">
-                <h3 className="font-medium text-sm mb-3">기준 연도 설정</h3>
+                <h3 className="font-medium text-sm mb-3">30년 계획 시작 연도</h3>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-500">30세 기준 연도:</label>
                   <input
                     type="number"
                     value={baseYear}
                     onChange={(e) => {
                       const val = parseInt(e.target.value);
-                      if (val > 1950 && val < 2100) {
+                      if (val > 1900 && val < 2200) {
                         setBaseYear(val);
                       }
                     }}
-                    className="w-20 px-2 py-1 border rounded text-sm"
+                    className="w-24 px-2 py-1 border rounded text-sm text-center font-medium"
                   />
+                  <span className="text-gray-400">~</span>
+                  <span className="font-medium text-gray-700">{baseYear + 29}</span>
                 </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  생년: {baseYear - 30}년 (현재 {new Date().getFullYear() - (baseYear - 30)}세)
-                </p>
                 <button
                   onClick={() => setShowSettings(false)}
                   className="mt-3 w-full py-1 bg-gray-100 rounded text-sm hover:bg-gray-200"
@@ -136,6 +148,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
       <main className="flex-1 overflow-hidden">
         {children}
       </main>
+
+      {/* AI 어시스턴트 */}
+      <ChatAssistant />
     </div>
   );
 };
