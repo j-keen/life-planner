@@ -25,6 +25,7 @@ import {
   getISOWeekYear,
 } from '../store/usePlanStore';
 import { Item, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX, Category, CATEGORIES, CATEGORY_CONFIG } from '../types/plan';
+import { parseDayPeriodId, isHolidayOrWeekend } from '../lib/holidays';
 
 // ═══════════════════════════════════════════════════════════════
 // 카테고리별 힌트 텍스트
@@ -488,6 +489,23 @@ function GridCell({
   const totalCount = items.length;
   const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
+  // 주말/공휴일 색상 계산
+  const date = parseDayPeriodId(slotId);
+  const dayInfo = date ? isHolidayOrWeekend(date) : null;
+
+  // 색상 결정: 공휴일/일요일 > 토요일 > 기본
+  const getColors = () => {
+    if (!dayInfo) return { bg: 'bg-white', header: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-800' };
+    if (dayInfo.isHoliday || dayInfo.isSunday) {
+      return { bg: 'bg-red-50', header: 'bg-red-100', border: 'border-red-200', text: 'text-red-700' };
+    }
+    if (dayInfo.isSaturday) {
+      return { bg: 'bg-blue-50', header: 'bg-blue-100', border: 'border-blue-200', text: 'text-blue-700' };
+    }
+    return { bg: 'bg-white', header: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-800' };
+  };
+  const colors = getColors();
+
   return (
     <div
       ref={setNodeRef}
@@ -497,12 +515,17 @@ function GridCell({
         min-h-[140px] transition-all overflow-hidden
         ${isOver
           ? 'border-2 border-blue-500 bg-blue-50 shadow-lg scale-[1.02]'
-          : 'border border-slate-300 bg-white hover:border-blue-400 hover:shadow-md'}
+          : `border ${colors.border} ${colors.bg} hover:border-blue-400 hover:shadow-md`}
       `}
     >
       {/* 셀 헤더 */}
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-100 border-b border-slate-200">
-        <span className="text-sm font-bold text-slate-800">{label}</span>
+      <div className={`flex items-center justify-between px-3 py-2 ${colors.header} border-b ${colors.border}`}>
+        <div className="flex items-center gap-1">
+          <span className={`text-sm font-bold ${colors.text}`}>{label}</span>
+          {dayInfo?.holidayName && (
+            <span className="text-[10px] text-red-500 font-medium">({dayInfo.holidayName})</span>
+          )}
+        </div>
         {totalCount > 0 && (
           <div className="flex items-center gap-2">
             <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -526,11 +549,10 @@ function GridCell({
             <div
               key={item.id}
               className={`
-                group flex flex-col gap-0.5 p-2 rounded-lg text-xs
+                group flex items-center gap-1.5 p-1.5 rounded-lg text-xs
                 ${item.color || 'bg-slate-50'} border border-slate-200
                 ${item.isCompleted ? 'bg-green-50 border-green-200' : ''}
                 hover:shadow-sm hover:bg-white transition-all
-                ${catConfig ? 'border-l-3' : ''}
               `}
               style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
               onClick={(e) => e.stopPropagation()}
@@ -539,50 +561,44 @@ function GridCell({
                 setNoteModalItem(item);
               }}
             >
-              <div className="flex items-center gap-1.5">
-                {/* 카테고리 dot */}
-                {catConfig && (
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${catConfig.dotColor}`} />
-                )}
-                <input
-                  type="checkbox"
-                  checked={item.isCompleted}
-                  onChange={() => onToggleItem(item.id)}
-                  className="w-3.5 h-3.5 accent-blue-600 rounded"
-                />
-                <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                  {item.content}
-                </span>
-                {/* 메모 뱃지 (메모가 있을 때만) */}
-                {item.note && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setNoteModalItem(item);
-                    }}
-                    className="text-amber-500 hover:text-amber-600 text-[10px]"
-                    title="메모 보기"
-                  >
-                    📝
-                  </button>
-                )}
-                <button
-                  onClick={() => onDeleteItem(item.id)}
-                  className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600 transition-all text-[10px]"
-                >
-                  ×
-                </button>
-              </div>
-              {/* 출처 태그 */}
+              <input
+                type="checkbox"
+                checked={item.isCompleted}
+                onChange={() => onToggleItem(item.id)}
+                className="w-3.5 h-3.5 accent-blue-600 rounded flex-shrink-0"
+              />
+              <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                {item.content}
+              </span>
+              {/* 출처 태그 (inline compact) */}
               {item.sourceLevel && (
-                <span className={`ml-5 text-[10px] px-1.5 py-0.5 rounded-full w-fit font-medium ${
+                <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
                   item.sourceType === 'routine'
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-blue-500 text-white'
+                    ? 'bg-purple-100 text-purple-600'
+                    : 'bg-blue-100 text-blue-600'
                 }`}>
-                  {SOURCE_TAG_PREFIX[item.sourceLevel]} {item.sourceType === 'routine' ? '루틴' : '할일'}
+                  {SOURCE_TAG_PREFIX[item.sourceLevel]}
                 </span>
               )}
+              {/* 메모 뱃지 (메모가 있을 때만) */}
+              {item.note && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNoteModalItem(item);
+                  }}
+                  className="text-amber-500 hover:text-amber-600 text-[10px] flex-shrink-0"
+                  title="메모 보기"
+                >
+                  📝
+                </button>
+              )}
+              <button
+                onClick={() => onDeleteItem(item.id)}
+                className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600 transition-all text-[10px] flex-shrink-0"
+              >
+                ×
+              </button>
             </div>
           );
         })}
@@ -687,14 +703,14 @@ function TimeSlotCell({
       </div>
 
       {/* 배정된 아이템들 */}
-      <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+      <div className="flex-1 p-2 space-y-1.5 overflow-y-auto">
         {items.map((item) => {
           const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
           return (
             <div
               key={item.id}
               className={`
-                group flex flex-col gap-1 p-2.5 rounded-lg text-sm
+                group flex items-center gap-1.5 p-2 rounded-lg text-sm
                 ${item.color || 'bg-white'} border border-gray-100 shadow-sm
                 ${item.isCompleted ? 'opacity-60' : ''}
                 hover:shadow-md transition-all
@@ -702,47 +718,41 @@ function TimeSlotCell({
               style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
               onDoubleClick={() => setNoteModalItem(item)}
             >
-              <div className="flex items-center gap-2">
-                {/* 카테고리 dot */}
-                {catConfig && (
-                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${catConfig.dotColor}`} />
-                )}
-                <input
-                  type="checkbox"
-                  checked={item.isCompleted}
-                  onChange={() => onToggleItem(item.id)}
-                  className="w-4 h-4 accent-blue-500"
-                />
-                <span className={`flex-1 ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-                  {item.content}
-                </span>
-                {/* 메모 뱃지 (메모가 있을 때만) */}
-                {item.note && (
-                  <button
-                    onClick={() => setNoteModalItem(item)}
-                    className="text-amber-500 hover:text-amber-600 text-xs"
-                    title="메모 보기"
-                  >
-                    📝
-                  </button>
-                )}
-                <button
-                  onClick={() => onDeleteItem(item.id)}
-                  className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all"
-                >
-                  ×
-                </button>
-              </div>
-              {/* 출처 태그 */}
+              <input
+                type="checkbox"
+                checked={item.isCompleted}
+                onChange={() => onToggleItem(item.id)}
+                className="w-4 h-4 accent-blue-500 flex-shrink-0"
+              />
+              <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                {item.content}
+              </span>
+              {/* 출처 태그 (inline compact) */}
               {item.sourceLevel && (
-                <span className={`ml-6 text-xs px-1.5 py-0.5 rounded w-fit ${
+                <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
                   item.sourceType === 'routine'
                     ? 'bg-purple-100 text-purple-600'
                     : 'bg-blue-100 text-blue-600'
                 }`}>
-                  {SOURCE_TAG_PREFIX[item.sourceLevel]} {item.sourceType === 'routine' ? '루틴' : '할일'}
+                  {SOURCE_TAG_PREFIX[item.sourceLevel]}
                 </span>
               )}
+              {/* 메모 뱃지 (메모가 있을 때만) */}
+              {item.note && (
+                <button
+                  onClick={() => setNoteModalItem(item)}
+                  className="text-amber-500 hover:text-amber-600 text-xs flex-shrink-0"
+                  title="메모 보기"
+                >
+                  📝
+                </button>
+              )}
+              <button
+                onClick={() => onDeleteItem(item.id)}
+                className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
+              >
+                ×
+              </button>
             </div>
           );
         })}
@@ -941,8 +951,8 @@ export default function FractalView() {
         // 5개 셀: 5×1 (주)
         return { gridTemplateColumns: 'repeat(5, 1fr)', gridTemplateRows: '1fr' };
       case 'WEEK':
-        // 7개 셀: 7×1 (요일)
-        return { gridTemplateColumns: 'repeat(7, 1fr)', gridTemplateRows: '1fr' };
+        // 4-3 분할: 2행 그리드 (월~목 / 금~일)
+        return { gridTemplateColumns: 'repeat(4, 1fr)', gridTemplateRows: 'repeat(2, 1fr)' };
       default:
         return { gridTemplateColumns: 'repeat(4, 1fr)' };
     }
