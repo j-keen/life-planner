@@ -817,6 +817,7 @@ export default function FractalView() {
     updatePeriodHeader,
     addMemo,
     removeMemo,
+    getInheritedMemos,
     addItem,
     deleteItem,
     updateItemContent,
@@ -1100,24 +1101,52 @@ export default function FractalView() {
             </div>
           </div>
 
-          {/* 2줄: 메모 태그들 */}
+          {/* 2줄: 메모 태그들 (상위 기간 메모 포함) */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500 flex-shrink-0">📝</span>
-            {/* 기존 메모 태그들 */}
-            {(period.memos || []).map((memo, index) => (
-              <span
-                key={index}
-                className="group inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700"
-              >
-                {memo}
-                <button
-                  onClick={() => removeMemo(index)}
-                  className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-amber-200 text-amber-500 hover:text-amber-700 transition-colors"
+            {/* 상속된 메모 + 현재 기간 메모 */}
+            {getInheritedMemos(currentPeriodId).map((memo, index) => {
+              const isCurrentPeriod = memo.sourcePeriodId === currentPeriodId;
+              const levelColors: Record<string, string> = {
+                THIRTY_YEAR: 'bg-rose-50 border-rose-200 text-rose-700',
+                FIVE_YEAR: 'bg-orange-50 border-orange-200 text-orange-700',
+                YEAR: 'bg-amber-50 border-amber-200 text-amber-700',
+                QUARTER: 'bg-lime-50 border-lime-200 text-lime-700',
+                MONTH: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+                WEEK: 'bg-cyan-50 border-cyan-200 text-cyan-700',
+                DAY: 'bg-blue-50 border-blue-200 text-blue-700',
+              };
+              const colorClass = levelColors[memo.sourceLevel] || 'bg-gray-50 border-gray-200 text-gray-700';
+
+              return (
+                <span
+                  key={memo.id}
+                  className={`group inline-flex items-center gap-1 px-2 py-0.5 border rounded-full text-xs ${colorClass} ${!isCurrentPeriod ? 'opacity-70' : ''}`}
                 >
-                  ×
-                </button>
-              </span>
-            ))}
+                  {/* 출처 레벨 태그 (현재 기간이 아닌 경우만) */}
+                  {!isCurrentPeriod && (
+                    <span className="text-[10px] font-semibold opacity-60">
+                      {SOURCE_TAG_PREFIX[memo.sourceLevel]}
+                    </span>
+                  )}
+                  {memo.content}
+                  {/* 삭제 버튼 (현재 기간 메모만) */}
+                  {isCurrentPeriod && (
+                    <button
+                      onClick={() => {
+                        // 현재 기간의 structuredMemos에서 해당 인덱스 찾기
+                        const currentMemos = period.structuredMemos || [];
+                        const memoIndex = currentMemos.findIndex(m => m.id === memo.id);
+                        if (memoIndex !== -1) removeMemo(memoIndex);
+                      }}
+                      className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-white/50 transition-colors"
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              );
+            })}
             {/* 메모 추가 입력 */}
             <input
               type="text"

@@ -421,6 +421,7 @@ function AddRoutineForm({
         motto: '',
         memo: '',
         memos: [],
+        structuredMemos: [],
         todos: [],
         routines: [],
         slots: {},

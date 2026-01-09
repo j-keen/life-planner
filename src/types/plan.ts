@@ -250,6 +250,14 @@ export interface Item {
   note?: string;
 }
 
+// 메모 항목 (출처 레벨 포함)
+export interface Memo {
+  id: string;
+  content: string;
+  sourceLevel: Level;      // 어느 레벨에서 작성되었는지
+  sourcePeriodId: string;  // 원본 기간 ID
+}
+
 // 각 기간의 데이터
 export interface Period {
   id: string;
@@ -259,7 +267,8 @@ export interface Period {
   goal: string;
   motto: string;
   memo: string;     // deprecated: 하위호환용
-  memos: string[];  // 메모 태그 배열
+  memos: string[];  // deprecated: 하위호환용 (기존 string 배열)
+  structuredMemos: Memo[];  // 새로운 구조화된 메모 배열
 
   // 패널
   todos: Item[];        // 좌측 - 할일 목록

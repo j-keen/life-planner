@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Level, Item, Period, LEVEL_CONFIG, LEVELS, TimeSlot, TIME_SLOTS, Category, DailyRecord, Mood, AnnualEvent, AnnualEventType } from '../types/plan';
+import { Level, Item, Period, LEVEL_CONFIG, LEVELS, TimeSlot, TIME_SLOTS, Category, DailyRecord, Mood, AnnualEvent, AnnualEventType, Memo } from '../types/plan';
 
 // ═══════════════════════════════════════════════════════════════
 // 유틸리티 함수들
@@ -17,7 +17,8 @@ const createEmptyPeriod = (id: string, level: Level): Period => {
     goal: '',
     motto: '',
     memo: '',
-    memos: [],  // 메모 태그 배열
+    memos: [],  // deprecated: 하위호환용
+    structuredMemos: [],  // 새로운 구조화된 메모 배열
     todos: [],
     routines: [],
     slots: {},
@@ -470,6 +471,7 @@ interface PlanStore {
   updatePeriodHeader: (field: 'goal' | 'motto' | 'memo', value: string) => void;
   addMemo: (text: string) => void;
   removeMemo: (index: number) => void;
+  getInheritedMemos: (periodId: string) => Memo[];  // 상위 기간 메모 수집
 
   // 항목 CRUD
   addItem: (content: string, to: 'todo' | 'routine', targetCount?: number, category?: Category) => void;
@@ -608,17 +610,24 @@ export const usePlanStore = create<PlanStore>()(
       },
 
       addMemo: (text) => {
-        const { currentPeriodId, ensurePeriod } = get();
+        const { currentPeriodId, currentLevel, ensurePeriod } = get();
         const period = ensurePeriod(currentPeriodId);
         const freshState = get();
-        const currentMemos = period.memos || [];
+        const currentMemos = period.structuredMemos || [];
+
+        const newMemo: Memo = {
+          id: genId(),
+          content: text,
+          sourceLevel: currentLevel,
+          sourcePeriodId: currentPeriodId,
+        };
 
         set({
           periods: {
             ...freshState.periods,
             [currentPeriodId]: {
               ...period,
-              memos: [...currentMemos, text],
+              structuredMemos: [...currentMemos, newMemo],
             },
           },
         });
@@ -628,17 +637,65 @@ export const usePlanStore = create<PlanStore>()(
         const { currentPeriodId, ensurePeriod } = get();
         const period = ensurePeriod(currentPeriodId);
         const freshState = get();
-        const currentMemos = period.memos || [];
+        const currentMemos = period.structuredMemos || [];
 
         set({
           periods: {
             ...freshState.periods,
             [currentPeriodId]: {
               ...period,
-              memos: currentMemos.filter((_, i) => i !== index),
+              structuredMemos: currentMemos.filter((_, i) => i !== index),
             },
           },
         });
+      },
+
+      // 상위 기간 메모 수집 (현재 기간 포함)
+      getInheritedMemos: (periodId: string) => {
+        const state = get();
+        const allMemos: Memo[] = [];
+        let currentId: string | null = periodId;
+
+        // 부모 체인을 따라 올라가며 메모 수집
+        while (currentId) {
+          const period = state.periods[currentId];
+          if (period) {
+            // 구조화된 메모 추가
+            const structuredMemos = period.structuredMemos || [];
+            allMemos.push(...structuredMemos);
+
+            // 기존 string 배열 메모도 변환하여 추가 (하위호환)
+            const oldMemos = period.memos || [];
+            oldMemos.forEach((content, idx) => {
+              // 이미 structuredMemos에 같은 내용이 있으면 스킵
+              if (!structuredMemos.some(m => m.content === content)) {
+                allMemos.push({
+                  id: `legacy-${currentId}-${idx}`,
+                  content,
+                  sourceLevel: period.level,
+                  sourcePeriodId: currentId!,
+                });
+              }
+            });
+          }
+
+          // 부모 기간으로 이동
+          currentId = getParentPeriodId(currentId, state.baseYear);
+        }
+
+        // 상위 레벨이 먼저 오도록 정렬 (THIRTY_YEAR → DAY 순서)
+        const levelOrder: Record<Level, number> = {
+          THIRTY_YEAR: 0,
+          FIVE_YEAR: 1,
+          YEAR: 2,
+          QUARTER: 3,
+          MONTH: 4,
+          WEEK: 5,
+          DAY: 6,
+        };
+        allMemos.sort((a, b) => levelOrder[a.sourceLevel] - levelOrder[b.sourceLevel]);
+
+        return allMemos;
       },
 
       addItem: (content, to, targetCount, category) => {
