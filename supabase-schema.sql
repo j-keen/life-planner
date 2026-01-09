@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS periods (
   goal TEXT DEFAULT '',
   motto TEXT DEFAULT '',
   memo TEXT DEFAULT '',
+  memos JSONB DEFAULT '[]',
+  structured_memos JSONB DEFAULT '[]',
   todos JSONB DEFAULT '[]',
   routines JSONB DEFAULT '[]',
   slots JSONB DEFAULT '{}',
@@ -16,6 +18,10 @@ CREATE TABLE IF NOT EXISTS periods (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- 기존 테이블에 컬럼 추가 (마이그레이션용)
+ALTER TABLE periods ADD COLUMN IF NOT EXISTS memos JSONB DEFAULT '[]';
+ALTER TABLE periods ADD COLUMN IF NOT EXISTS structured_memos JSONB DEFAULT '[]';
 
 -- Records 테이블 (기록 데이터)
 CREATE TABLE IF NOT EXISTS records (
