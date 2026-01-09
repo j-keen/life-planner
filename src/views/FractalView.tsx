@@ -787,7 +787,8 @@ function AddItemInput({
 }) {
   const [value, setValue] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!value.trim()) return;
 
     // "운동 / 3" 형식 파싱
@@ -801,14 +802,16 @@ function AddItemInput({
   };
 
   return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-      placeholder={placeholder}
-      className="w-full px-2 py-1 text-xs bg-transparent border-b border-dashed border-gray-200 focus:outline-none focus:border-gray-400 placeholder-gray-300"
-    />
+    <form onSubmit={handleSubmit} className="w-full">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={placeholder}
+        enterKeyHint="done"
+        className="w-full px-2 py-1 text-xs bg-transparent border-b border-dashed border-gray-200 focus:outline-none focus:border-gray-400 placeholder-gray-300"
+      />
+    </form>
   );
 }
 
@@ -1173,19 +1176,25 @@ export default function FractalView() {
               );
             })}
             {/* 메모 추가 입력 */}
-            <input
-              type="text"
-              value={memoInput}
-              onChange={(e) => setMemoInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && memoInput.trim()) {
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (memoInput.trim()) {
                   addMemo(memoInput.trim());
                   setMemoInput('');
                 }
               }}
-              placeholder="+ 메모 추가..."
-              className="flex-shrink-0 w-28 px-2 py-0.5 text-xs border border-dashed border-slate-300 rounded-full outline-none focus:border-amber-400 bg-transparent placeholder-slate-400"
-            />
+              className="flex-shrink-0"
+            >
+              <input
+                type="text"
+                value={memoInput}
+                onChange={(e) => setMemoInput(e.target.value)}
+                placeholder="+ 메모 추가..."
+                enterKeyHint="done"
+                className="w-28 px-2 py-0.5 text-xs border border-dashed border-slate-300 rounded-full outline-none focus:border-amber-400 bg-transparent placeholder-slate-400"
+              />
+            </form>
           </div>
         </div>
 
