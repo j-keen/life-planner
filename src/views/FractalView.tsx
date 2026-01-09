@@ -847,6 +847,7 @@ export default function FractalView() {
   const [mounted, setMounted] = useState(false);
   const [editingField, setEditingField] = useState<'goal' | 'motto' | null>(null);
   const [memoInput, setMemoInput] = useState('');
+  const [mobileTab, setMobileTab] = useState<'todo' | 'grid' | 'routine'>('grid');
 
   useEffect(() => setMounted(true), []);
 
@@ -932,26 +933,40 @@ export default function FractalView() {
     }
   };
 
-  // 레벨별 최적 그리드 레이아웃
-  const getGridStyle = () => {
+  // 레벨별 최적 그리드 레이아웃 (반응형)
+  const getGridStyle = (isMobile: boolean = false) => {
+    if (isMobile) {
+      // 모바일: 세로 스크롤 레이아웃
+      switch (currentLevel) {
+        case 'THIRTY_YEAR':
+          return { gridTemplateColumns: 'repeat(2, 1fr)', gridTemplateRows: 'repeat(3, minmax(120px, auto))' };
+        case 'FIVE_YEAR':
+          return { gridTemplateColumns: 'repeat(2, 1fr)', gridTemplateRows: 'repeat(3, minmax(100px, auto))' };
+        case 'YEAR':
+          return { gridTemplateColumns: 'repeat(2, 1fr)', gridTemplateRows: 'repeat(2, minmax(120px, auto))' };
+        case 'QUARTER':
+          return { gridTemplateColumns: '1fr', gridTemplateRows: 'repeat(3, minmax(100px, auto))' };
+        case 'MONTH':
+          return { gridTemplateColumns: '1fr', gridTemplateRows: 'repeat(5, minmax(80px, auto))' };
+        case 'WEEK':
+          return { gridTemplateColumns: '1fr', gridTemplateRows: 'repeat(7, minmax(80px, auto))' };
+        default:
+          return { gridTemplateColumns: '1fr' };
+      }
+    }
+    // 데스크톱
     switch (currentLevel) {
       case 'THIRTY_YEAR':
-        // 6개 셀: 3×2
         return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(2, 1fr)' };
       case 'FIVE_YEAR':
-        // 5개 셀: 5×1 (가로 일렬)
         return { gridTemplateColumns: 'repeat(5, 1fr)', gridTemplateRows: '1fr' };
       case 'YEAR':
-        // 4개 셀: 4×1 (분기)
         return { gridTemplateColumns: 'repeat(4, 1fr)', gridTemplateRows: '1fr' };
       case 'QUARTER':
-        // 3개 셀: 3×1 (월)
         return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: '1fr' };
       case 'MONTH':
-        // 5개 셀: 5×1 (주)
         return { gridTemplateColumns: 'repeat(5, 1fr)', gridTemplateRows: '1fr' };
       case 'WEEK':
-        // 4-3 분할: 2행 그리드 (월~목 / 금~일)
         return { gridTemplateColumns: 'repeat(4, 1fr)', gridTemplateRows: 'repeat(2, 1fr)' };
       default:
         return { gridTemplateColumns: 'repeat(4, 1fr)' };
@@ -967,11 +982,11 @@ export default function FractalView() {
     >
       <div className="flex flex-col h-full bg-slate-100">
         {/* ═══════════════════════════════════════════════════════ */}
-        {/* 헤더 영역 (2줄 컴팩트) */}
+        {/* 헤더 영역 (반응형) */}
         {/* ═══════════════════════════════════════════════════════ */}
-        <div className="px-4 py-2 bg-white border-b-2 border-blue-500 shadow-sm space-y-2">
+        <div className="px-2 md:px-4 py-2 bg-white border-b-2 border-blue-500 shadow-sm space-y-1 md:space-y-2">
           {/* 1줄: 네비게이션 + 목표 + 다짐 + 토글 */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 md:gap-2">
             {/* 뒤로가기 */}
             {currentLevel !== 'THIRTY_YEAR' && (
               <button
@@ -1042,11 +1057,11 @@ export default function FractalView() {
               </button>
             )}
 
-            {/* 구분선 */}
-            <div className="w-px h-5 bg-slate-300" />
+            {/* 구분선 (데스크톱만) */}
+            <div className="hidden md:block w-px h-5 bg-slate-300" />
 
-            {/* 목표 인라인 입력 */}
-            <div className="flex items-center gap-1 flex-1 min-w-0">
+            {/* 목표 인라인 입력 (데스크톱만) */}
+            <div className="hidden md:flex items-center gap-1 flex-1 min-w-0">
               <span className="text-xs text-slate-500 flex-shrink-0">🎯</span>
               {editingField === 'goal' ? (
                 <input
@@ -1071,8 +1086,8 @@ export default function FractalView() {
               )}
             </div>
 
-            {/* 다짐 인라인 입력 */}
-            <div className="flex items-center gap-1 flex-1 min-w-0">
+            {/* 다짐 인라인 입력 (데스크톱만) */}
+            <div className="hidden md:flex items-center gap-1 flex-1 min-w-0">
               <span className="text-xs text-slate-500 flex-shrink-0">💪</span>
               {editingField === 'motto' ? (
                 <input
@@ -1097,8 +1112,8 @@ export default function FractalView() {
               )}
             </div>
 
-            {/* 계획/기록 토글 */}
-            <div className="flex bg-slate-200 rounded-md p-0.5 flex-shrink-0">
+            {/* 계획/기록 토글 (태블릿 이상만) */}
+            <div className="hidden lg:flex bg-slate-200 rounded-md p-0.5 flex-shrink-0">
               <button className="px-3 py-1 rounded text-xs font-medium bg-blue-600 text-white">
                 계획
               </button>
@@ -1111,8 +1126,8 @@ export default function FractalView() {
             </div>
           </div>
 
-          {/* 2줄: 메모 태그들 (상위 기간 메모 포함) */}
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* 2줄: 메모 태그들 (데스크톱만) */}
+          <div className="hidden md:flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500 flex-shrink-0">📝</span>
             {/* 상속된 메모 + 현재 기간 메모 */}
             {getInheritedMemos(currentPeriodId).map((memo, index) => {
@@ -1175,13 +1190,17 @@ export default function FractalView() {
         </div>
 
         {/* ═══════════════════════════════════════════════════════ */}
-        {/* 본문 영역 (3열: 할일 | 그리드 | 루틴) */}
+        {/* 본문 영역 (반응형: 데스크톱 3열 / 모바일 탭 전환) */}
         {/* ═══════════════════════════════════════════════════════ */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden pb-14 md:pb-0">
           {/* ─────────────────────────────────────────────────────── */}
-          {/* 좌측 패널: 할일 목록 (카테고리별) */}
+          {/* 좌측 패널: 할일 목록 (데스크톱: 항상 / 모바일: 탭 선택시) */}
           {/* ─────────────────────────────────────────────────────── */}
-          <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto">
+          <div className={`
+            bg-white border-r border-slate-200 overflow-y-auto
+            w-full md:w-56 lg:w-72
+            ${mobileTab === 'todo' ? 'block' : 'hidden'} md:block
+          `}>
             <div className="p-3 border-b-2 border-blue-500 bg-blue-50">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <span className="text-blue-600">✓</span>
@@ -1257,53 +1276,102 @@ export default function FractalView() {
           </div>
 
           {/* ─────────────────────────────────────────────────────── */}
-          {/* 중앙: 메인 그리드 */}
+          {/* 중앙: 메인 그리드 (데스크톱: 항상 / 모바일: 탭 선택시) */}
           {/* ─────────────────────────────────────────────────────── */}
-          <div className="flex-1 p-6 overflow-y-auto">
+          <div className={`
+            flex-1 p-2 md:p-4 lg:p-6 overflow-y-auto
+            ${mobileTab === 'grid' ? 'block' : 'hidden'} md:block
+          `}>
             {config.childLevel ? (
-              <div
-                className="grid gap-4 h-full"
-                style={getGridStyle()}
-              >
-                {childPeriodIds.map((childId) => (
-                  <GridCell
-                    key={childId}
-                    slotId={childId}
-                    label={getSlotLabel(childId, baseYear)}
-                    items={period.slots[childId] || []}
-                    onDrillDown={() => drillDown(childId)}
-                    onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
-                    onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
-                    onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
-                  />
-                ))}
-              </div>
-            ) : (
-              /* DAY 레벨: 시간대 그리드 (8칸: 4열 x 2행) */
-              <div className="grid grid-cols-4 grid-rows-2 gap-3 h-full">
-                {TIME_SLOTS.map((timeSlot) => {
-                  const slotId = getTimeSlotId(currentPeriodId, timeSlot);
-                  const items = period.timeSlots?.[timeSlot] || [];
-                  return (
-                    <TimeSlotCell
-                      key={timeSlot}
-                      slotId={slotId}
-                      timeSlot={timeSlot}
-                      items={items}
-                      onToggleItem={(itemId) => toggleComplete(itemId, 'slot', slotId)}
-                      onDeleteItem={(itemId) => deleteItem(itemId, 'slot', slotId)}
-                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', slotId)}
+              <>
+                {/* 데스크톱 그리드 */}
+                <div
+                  className="hidden md:grid gap-2 lg:gap-4 h-full"
+                  style={getGridStyle(false)}
+                >
+                  {childPeriodIds.map((childId) => (
+                    <GridCell
+                      key={childId}
+                      slotId={childId}
+                      label={getSlotLabel(childId, baseYear)}
+                      items={period.slots[childId] || []}
+                      onDrillDown={() => drillDown(childId)}
+                      onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
+                      onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
+                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
                     />
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+                {/* 모바일 그리드 */}
+                <div
+                  className="md:hidden grid gap-2"
+                  style={getGridStyle(true)}
+                >
+                  {childPeriodIds.map((childId) => (
+                    <GridCell
+                      key={childId}
+                      slotId={childId}
+                      label={getSlotLabel(childId, baseYear)}
+                      items={period.slots[childId] || []}
+                      onDrillDown={() => drillDown(childId)}
+                      onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
+                      onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
+                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              /* DAY 레벨: 시간대 그리드 (반응형) */
+              <>
+                {/* 데스크톱: 4x2 그리드 */}
+                <div className="hidden md:grid grid-cols-4 grid-rows-2 gap-3 h-full">
+                  {TIME_SLOTS.map((timeSlot) => {
+                    const slotId = getTimeSlotId(currentPeriodId, timeSlot);
+                    const items = period.timeSlots?.[timeSlot] || [];
+                    return (
+                      <TimeSlotCell
+                        key={timeSlot}
+                        slotId={slotId}
+                        timeSlot={timeSlot}
+                        items={items}
+                        onToggleItem={(itemId) => toggleComplete(itemId, 'slot', slotId)}
+                        onDeleteItem={(itemId) => deleteItem(itemId, 'slot', slotId)}
+                        onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', slotId)}
+                      />
+                    );
+                  })}
+                </div>
+                {/* 모바일: 세로 리스트 */}
+                <div className="md:hidden grid grid-cols-1 gap-2">
+                  {TIME_SLOTS.map((timeSlot) => {
+                    const slotId = getTimeSlotId(currentPeriodId, timeSlot);
+                    const items = period.timeSlots?.[timeSlot] || [];
+                    return (
+                      <TimeSlotCell
+                        key={timeSlot}
+                        slotId={slotId}
+                        timeSlot={timeSlot}
+                        items={items}
+                        onToggleItem={(itemId) => toggleComplete(itemId, 'slot', slotId)}
+                        onDeleteItem={(itemId) => deleteItem(itemId, 'slot', slotId)}
+                        onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', slotId)}
+                      />
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
 
           {/* ─────────────────────────────────────────────────────── */}
-          {/* 우측 패널: 루틴 목록 (카테고리별) */}
+          {/* 우측 패널: 루틴 목록 (데스크톱: 항상 / 모바일: 탭 선택시) */}
           {/* ─────────────────────────────────────────────────────── */}
-          <div className="w-72 bg-white border-l border-slate-200 overflow-y-auto">
+          <div className={`
+            bg-white border-l border-slate-200 overflow-y-auto
+            w-full md:w-56 lg:w-72
+            ${mobileTab === 'routine' ? 'block' : 'hidden'} md:block
+          `}>
             <div className="p-3 border-b-2 border-purple-500 bg-purple-50">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <span className="text-purple-600">↻</span>
@@ -1377,6 +1445,47 @@ export default function FractalView() {
               })}
             </div>
           </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/* 하단 탭바 (모바일 전용) */}
+        {/* ═══════════════════════════════════════════════════════ */}
+        <div className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-slate-200 shadow-lg z-50">
+          <nav className="flex h-full">
+            <button
+              onClick={() => setMobileTab('todo')}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                mobileTab === 'todo'
+                  ? 'text-blue-600 bg-blue-50'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-lg">✓</span>
+              <span className="text-[10px] font-medium">할일</span>
+            </button>
+            <button
+              onClick={() => setMobileTab('grid')}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                mobileTab === 'grid'
+                  ? 'text-blue-600 bg-blue-50'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-lg">📅</span>
+              <span className="text-[10px] font-medium">일정</span>
+            </button>
+            <button
+              onClick={() => setMobileTab('routine')}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                mobileTab === 'routine'
+                  ? 'text-purple-600 bg-purple-50'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-lg">↻</span>
+              <span className="text-[10px] font-medium">루틴</span>
+            </button>
+          </nav>
         </div>
       </div>
 
