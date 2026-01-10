@@ -985,84 +985,97 @@ export default function FractalView() {
     >
       <div className="flex flex-col h-full bg-slate-100">
         {/* ═══════════════════════════════════════════════════════ */}
-        {/* 헤더 영역 (반응형) */}
+        {/* 뷰/시간대 인지 배너 (큰 헤더) */}
         {/* ═══════════════════════════════════════════════════════ */}
-        <div className="px-2 md:px-4 py-2 bg-white border-b-2 border-blue-500 shadow-sm space-y-1 md:space-y-2">
-          {/* 1줄: 네비게이션 + 목표 + 다짐 + 토글 */}
-          <div className="flex items-center gap-1 md:gap-2">
-            {/* 뒤로가기 */}
-            {currentLevel !== 'THIRTY_YEAR' && (
-              <button
-                onClick={drillUp}
-                className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-all text-slate-600 text-xs font-medium"
-              >
-                ↑
-              </button>
-            )}
-
-            {/* 네비게이션 그룹 */}
-            {currentLevel !== 'THIRTY_YEAR' && (
-              <div className="flex items-center bg-slate-100 rounded-md border border-slate-200">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-3 md:px-6 py-2 md:py-3 shadow-md">
+          <div className="flex items-center justify-between">
+            {/* 좌측: 기간 제목 + 뷰 타입 */}
+            <div className="flex items-center gap-2 md:gap-4">
+              {/* 뒤로가기 (상위 레벨로) */}
+              {currentLevel !== 'THIRTY_YEAR' && (
                 <button
-                  onClick={() => {
-                    const prevId = getAdjacentPeriodId(currentPeriodId, 'prev', baseYear);
-                    if (prevId) usePlanStore.getState().navigateTo(prevId);
-                  }}
-                  className="w-6 h-6 flex items-center justify-center rounded-l-md hover:bg-white transition-all text-slate-500 hover:text-blue-600 text-xs"
+                  onClick={drillUp}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/20 hover:bg-white/30 transition-all text-white text-sm font-medium"
+                  title="상위 레벨로"
                 >
-                  ◀
+                  ↑
                 </button>
-                <div className="px-2 min-w-[100px] text-center">
-                  <span className="font-bold text-blue-600 text-sm">{getPeriodTitle()}</span>
-                </div>
-                <button
-                  onClick={() => {
-                    const nextId = getAdjacentPeriodId(currentPeriodId, 'next', baseYear);
-                    if (nextId) usePlanStore.getState().navigateTo(nextId);
-                  }}
-                  className="w-6 h-6 flex items-center justify-center rounded-r-md hover:bg-white transition-all text-slate-500 hover:text-blue-600 text-xs"
-                >
-                  ▶
-                </button>
+              )}
+              <div>
+                <h1 className="text-lg md:text-2xl font-bold leading-tight">
+                  {getPeriodTitle()}
+                </h1>
+                <span className="inline-flex items-center px-2 py-0.5 mt-0.5 rounded-full text-xs font-medium bg-white/20">
+                  {config.label} 뷰
+                </span>
               </div>
-            )}
+            </div>
 
-            {/* 30년 뷰일 때 제목 */}
-            {currentLevel === 'THIRTY_YEAR' && (
-              <span className="font-bold text-blue-600 text-sm">{getPeriodTitle()}</span>
-            )}
+            {/* 우측: 네비게이션 버튼 */}
+            <div className="flex items-center gap-1 md:gap-2">
+              {/* 이전/다음 네비게이션 */}
+              {currentLevel !== 'THIRTY_YEAR' && (
+                <div className="flex items-center bg-white/20 rounded-lg">
+                  <button
+                    onClick={() => {
+                      const prevId = getAdjacentPeriodId(currentPeriodId, 'prev', baseYear);
+                      if (prevId) usePlanStore.getState().navigateTo(prevId);
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded-l-lg hover:bg-white/30 transition-all text-white text-sm"
+                    title="이전"
+                  >
+                    ◀
+                  </button>
+                  <button
+                    onClick={() => {
+                      const nextId = getAdjacentPeriodId(currentPeriodId, 'next', baseYear);
+                      if (nextId) usePlanStore.getState().navigateTo(nextId);
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded-r-lg hover:bg-white/30 transition-all text-white text-sm"
+                    title="다음"
+                  >
+                    ▶
+                  </button>
+                </div>
+              )}
 
-            {/* 현재로 이동 */}
-            {currentLevel !== 'THIRTY_YEAR' && currentLevel !== 'FIVE_YEAR' && (
-              <button
-                onClick={() => {
-                  const now = new Date();
-                  const currentYear = now.getFullYear();
-                  const currentMonth = now.getMonth() + 1;
-                  let targetId = '';
-                  switch (currentLevel) {
-                    case 'YEAR': targetId = `y-${currentYear}`; break;
-                    case 'QUARTER': targetId = `q-${currentYear}-${Math.ceil(currentMonth / 3)}`; break;
-                    case 'MONTH': targetId = `m-${currentYear}-${String(currentMonth).padStart(2, '0')}`; break;
-                    case 'WEEK': {
-                      const weekNum = getISOWeek(now);
-                      const weekYear = getISOWeekYear(now);
-                      targetId = `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
-                      break;
+              {/* 현재로 이동 버튼 */}
+              {currentLevel !== 'THIRTY_YEAR' && currentLevel !== 'FIVE_YEAR' && (
+                <button
+                  onClick={() => {
+                    const now = new Date();
+                    const currentYear = now.getFullYear();
+                    const currentMonth = now.getMonth() + 1;
+                    let targetId = '';
+                    switch (currentLevel) {
+                      case 'YEAR': targetId = `y-${currentYear}`; break;
+                      case 'QUARTER': targetId = `q-${currentYear}-${Math.ceil(currentMonth / 3)}`; break;
+                      case 'MONTH': targetId = `m-${currentYear}-${String(currentMonth).padStart(2, '0')}`; break;
+                      case 'WEEK': {
+                        const weekNum = getISOWeek(now);
+                        const weekYear = getISOWeekYear(now);
+                        targetId = `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
+                        break;
+                      }
+                      case 'DAY': targetId = `d-${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; break;
                     }
-                    case 'DAY': targetId = `d-${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; break;
-                  }
-                  if (targetId) usePlanStore.getState().navigateTo(targetId);
-                }}
-                className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all font-medium"
-              >
-                {currentLevel === 'DAY' ? '오늘' : currentLevel === 'WEEK' ? '이번주' : currentLevel === 'MONTH' ? '이번달' : currentLevel === 'QUARTER' ? '이번분기' : '올해'}
-              </button>
-            )}
+                    if (targetId) usePlanStore.getState().navigateTo(targetId);
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-all"
+                >
+                  {currentLevel === 'DAY' ? '오늘' : currentLevel === 'WEEK' ? '이번주' : currentLevel === 'MONTH' ? '이번달' : currentLevel === 'QUARTER' ? '이번분기' : '올해'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
-            {/* 구분선 (데스크톱만) */}
-            <div className="hidden md:block w-px h-5 bg-slate-300" />
-
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/* 목표/다짐 영역 */}
+        {/* ═══════════════════════════════════════════════════════ */}
+        <div className="px-2 md:px-4 py-2 bg-white border-b border-slate-200 shadow-sm">
+          {/* 목표 + 다짐 + 토글 */}
+          <div className="flex items-center gap-1 md:gap-2">
             {/* 목표 인라인 입력 (데스크톱만) */}
             <div className="hidden md:flex items-center gap-1 flex-1 min-w-0">
               <span className="text-xs text-slate-500 flex-shrink-0">🎯</span>

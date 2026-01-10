@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { usePlanStore } from '../store/usePlanStore';
+import { loadSettings } from '../lib/settings';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,9 +14,19 @@ function ChatAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [apiKey, setApiKey] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { currentPeriodId, currentLevel, periods, records } = usePlanStore();
+
+  // API 키 로드
+  useEffect(() => {
+    loadSettings().then((settings) => {
+      if (settings.geminiApiKey) {
+        setApiKey(settings.geminiApiKey);
+      }
+    });
+  }, []);
   const period = periods[currentPeriodId];
   const record = records[currentPeriodId];
 
@@ -62,7 +73,7 @@ function ChatAssistant() {
           : undefined,
       };
 
-      // API 호출
+      // API 호출 (저장된 API 키 포함)
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,6 +81,7 @@ function ChatAssistant() {
           message: userMessage,
           context,
           history: messages.slice(-10), // 최근 10개 메시지만
+          apiKey: apiKey || undefined, // 저장된 API 키 전달
         }),
       });
 

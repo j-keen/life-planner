@@ -1,11 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
 
-// Google Gemini 클라이언트
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || '',
-});
-
 // 컨텍스트 타입
 interface ChatContext {
   periodId: string;
@@ -24,19 +19,28 @@ interface ChatContext {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, context, history } = await req.json() as {
+    const { message, context, history, apiKey: clientApiKey } = await req.json() as {
       message: string;
       context: ChatContext;
       history: { role: 'user' | 'assistant'; content: string }[];
+      apiKey?: string;
     };
 
+    // API 키 결정 (클라이언트 > 환경변수)
+    const geminiApiKey = clientApiKey || process.env.GEMINI_API_KEY;
+
     // API 키 확인
-    if (!process.env.GEMINI_API_KEY) {
+    if (!geminiApiKey) {
       return NextResponse.json(
-        { error: 'API 키가 설정되지 않았습니다. GEMINI_API_KEY 환경변수를 확인하세요.' },
+        { error: 'API 키가 설정되지 않았습니다. 설정에서 Gemini API 키를 입력하세요.' },
         { status: 500 }
       );
     }
+
+    // API 키로 클라이언트 생성
+    const ai = new GoogleGenAI({
+      apiKey: geminiApiKey,
+    });
 
     // 시스템 프롬프트 생성
     const systemPrompt = buildSystemPrompt(context);

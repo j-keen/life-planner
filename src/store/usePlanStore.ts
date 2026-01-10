@@ -533,12 +533,15 @@ interface PlanStore {
 // 스토어 구현
 // ═══════════════════════════════════════════════════════════════
 const currentYear = new Date().getFullYear();
+const now = new Date();
+const initialWeekNum = getISOWeek(now);
+const initialWeekYear = getISOWeekYear(now);
 
 export const usePlanStore = create<PlanStore>()(
   persist(
     (set, get) => ({
-      currentLevel: 'YEAR',
-      currentPeriodId: `y-${currentYear}`,
+      currentLevel: 'WEEK',
+      currentPeriodId: `w-${initialWeekYear}-${String(initialWeekNum).padStart(2, '0')}`,
       baseYear: currentYear,
       periods: {},
       allItems: {},
