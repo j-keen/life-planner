@@ -1066,7 +1066,7 @@ export default function FractalView() {
       case 'YEAR':
         return `${parsed.year}년`;
       case 'QUARTER':
-        return `${parsed.year}년 Q${parsed.quarter}`;
+        return `${parsed.year}년 ${parsed.quarter}분기`;
       case 'MONTH':
         return `${parsed.year}년 ${parsed.month}월`;
       case 'WEEK':
@@ -1198,8 +1198,9 @@ export default function FractalView() {
                       switch (level) {
                         case 'THIRTY_YEAR': targetId = '30y'; break;
                         case 'FIVE_YEAR': {
+                          // 현재 연도 기준 5년 구간 인덱스 (0-5)
                           const idx = Math.floor((year - baseYear) / 5);
-                          targetId = `5y-${baseYear + Math.max(0, idx) * 5}`;
+                          targetId = `5y-${Math.max(0, Math.min(5, idx))}`;
                           break;
                         }
                         case 'YEAR': targetId = `y-${year}`; break;

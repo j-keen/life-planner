@@ -242,11 +242,11 @@ export const getSlotLabel = (childId: string, baseYear: number): string => {
     case 'YEAR':
       return `${parsed.year}년`;
     case 'QUARTER': {
-      // Q1 (1~3월) 형식으로 상세 표시
+      // "2026년 1분기 (1~3월)" 형식으로 상세 표시
       const q = parsed.quarter || 1;
       const startMonth = (q - 1) * 3 + 1;
       const endMonth = startMonth + 2;
-      return `Q${q} (${startMonth}~${endMonth}월)`;
+      return `${parsed.year}년 ${q}분기 (${startMonth}~${endMonth}월)`;
     }
     case 'MONTH':
       // 연도와 함께 표시: "2026년 1월"
@@ -277,7 +277,7 @@ export const getSlotLabelShort = (childId: string, baseYear: number): string => 
     case 'YEAR':
       return `${parsed.year}`;
     case 'QUARTER':
-      return `Q${parsed.quarter}`;
+      return `${parsed.quarter}분기`;
     case 'MONTH':
       return `${parsed.month}월`;
     case 'WEEK':
