@@ -487,6 +487,12 @@ interface PlanStore {
   // 시간대 슬롯 배정 (일 뷰 전용)
   assignToTimeSlot: (itemId: string, from: 'todo' | 'routine', timeSlot: TimeSlot, subContent?: string) => void;
 
+  // 슬롯 간 아이템 이동
+  moveSlotItem: (itemId: string, fromSlotId: string, toSlotId: string) => void;
+
+  // 시간대 슬롯 간 아이템 이동
+  moveTimeSlotItem: (itemId: string, fromSlotId: string, toSlotId: string) => void;
+
   // 쪼개기: 하위 항목 추가
   addSubItem: (parentId: string, content: string, location: 'todo' | 'routine') => void;
 
@@ -1272,6 +1278,94 @@ export const usePlanStore = create<PlanStore>()(
             [newItem.id]: newItem,
             [updatedOriginal.id]: updatedOriginal,
           },
+        });
+      },
+
+      // ═══════════════════════════════════════════════════════════
+      // 슬롯 간 아이템 이동
+      // ═══════════════════════════════════════════════════════════
+      moveSlotItem: (itemId, fromSlotId, toSlotId) => {
+        const { currentPeriodId, ensurePeriod } = get();
+        const period = ensurePeriod(currentPeriodId);
+        const freshState = get();
+
+        // 동일 슬롯이면 무시
+        if (fromSlotId === toSlotId) return;
+
+        // 원본 슬롯에서 아이템 찾기
+        const fromItems = period.slots[fromSlotId] || [];
+        const itemToMove = fromItems.find((i) => i.id === itemId);
+        if (!itemToMove) return;
+
+        // 원본 슬롯에서 제거
+        const updatedFromItems = fromItems.filter((i) => i.id !== itemId);
+
+        // 대상 슬롯에 추가
+        const toItems = period.slots[toSlotId] || [];
+        const updatedToItems = [...toItems, itemToMove];
+
+        // 기간 업데이트
+        const updatedPeriod = {
+          ...period,
+          slots: {
+            ...period.slots,
+            [fromSlotId]: updatedFromItems,
+            [toSlotId]: updatedToItems,
+          },
+        };
+
+        set({
+          periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
+        });
+      },
+
+      // ═══════════════════════════════════════════════════════════
+      // 시간대 슬롯 간 아이템 이동
+      // ═══════════════════════════════════════════════════════════
+      moveTimeSlotItem: (itemId, fromSlotId, toSlotId) => {
+        const { currentPeriodId, ensurePeriod, currentLevel } = get();
+
+        // DAY 레벨에서만 작동
+        if (currentLevel !== 'DAY') return;
+
+        const period = ensurePeriod(currentPeriodId);
+        const freshState = get();
+
+        // 동일 슬롯이면 무시
+        if (fromSlotId === toSlotId) return;
+
+        // 시간대 슬롯 ID에서 TimeSlot 추출 (ts-d-2025-01-10-morning_early -> morning_early)
+        const fromParts = fromSlotId.split('-');
+        const fromTimeSlot = fromParts[fromParts.length - 1] as TimeSlot;
+        const toParts = toSlotId.split('-');
+        const toTimeSlot = toParts[toParts.length - 1] as TimeSlot;
+
+        if (!period.timeSlots) return;
+
+        // 원본 슬롯에서 아이템 찾기
+        const fromItems = period.timeSlots[fromTimeSlot] || [];
+        const itemToMove = fromItems.find((i) => i.id === itemId);
+        if (!itemToMove) return;
+
+        // 원본 슬롯에서 제거
+        const updatedFromItems = fromItems.filter((i) => i.id !== itemId);
+
+        // 대상 슬롯에 추가
+        const toItems = period.timeSlots[toTimeSlot] || [];
+        const updatedToItems = [...toItems, itemToMove];
+
+        // 기간 업데이트
+        const updatedPeriod = {
+          ...period,
+          timeSlots: {
+            ...period.timeSlots,
+            [fromTimeSlot]: updatedFromItems,
+            [toTimeSlot]: updatedToItems,
+          },
+        };
+
+        set({
+          periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
         });
       },
 

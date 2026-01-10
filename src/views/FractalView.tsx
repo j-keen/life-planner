@@ -463,6 +463,96 @@ function DraggableItem({
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 셀 내 드래그 가능한 아이템 컴포넌트
+// ═══════════════════════════════════════════════════════════════
+function CellDraggableItem({
+  item,
+  slotId,
+  onToggle,
+  onDelete,
+  onOpenNote,
+}: {
+  item: Item;
+  slotId: string;
+  onToggle: () => void;
+  onDelete: () => void;
+  onOpenNote: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `cell-${slotId}-${item.id}`,
+    data: { item, from: 'cell', sourceSlotId: slotId },
+  });
+
+  const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`
+        group flex items-center gap-1.5 p-1.5 rounded-lg text-xs cursor-grab
+        ${item.color || 'bg-slate-50'} border border-slate-200
+        ${item.isCompleted ? 'bg-green-50 border-green-200' : ''}
+        ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
+        hover:shadow-sm hover:bg-white hover:border-blue-300 transition-all
+      `}
+      style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onOpenNote();
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={item.isCompleted}
+        onChange={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-3.5 h-3.5 accent-blue-600 rounded flex-shrink-0"
+      />
+      <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+        {item.content}
+      </span>
+      {/* 출처 태그 */}
+      {item.sourceLevel && (
+        <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
+          item.sourceType === 'routine'
+            ? 'bg-purple-100 text-purple-600'
+            : 'bg-blue-100 text-blue-600'
+        }`}>
+          {SOURCE_TAG_PREFIX[item.sourceLevel]}
+        </span>
+      )}
+      {/* 메모 뱃지 */}
+      {item.note && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenNote();
+          }}
+          className="text-amber-500 hover:text-amber-600 text-[10px] flex-shrink-0"
+          title="메모 보기"
+        >
+          📝
+        </button>
+      )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600 transition-all text-[10px] flex-shrink-0"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 드롭 가능한 그리드 셀 컴포넌트
 // ═══════════════════════════════════════════════════════════════
 function GridCell({
@@ -542,66 +632,17 @@ function GridCell({
       </div>
 
       {/* 배정된 아이템들 */}
-      <div className="flex-1 p-2 space-y-1.5 overflow-y-auto">
-        {items.map((item) => {
-          const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
-          return (
-            <div
-              key={item.id}
-              className={`
-                group flex items-center gap-1.5 p-1.5 rounded-lg text-xs
-                ${item.color || 'bg-slate-50'} border border-slate-200
-                ${item.isCompleted ? 'bg-green-50 border-green-200' : ''}
-                hover:shadow-sm hover:bg-white transition-all
-              `}
-              style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
-              onClick={(e) => e.stopPropagation()}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                setNoteModalItem(item);
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={item.isCompleted}
-                onChange={() => onToggleItem(item.id)}
-                className="w-3.5 h-3.5 accent-blue-600 rounded flex-shrink-0"
-              />
-              <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                {item.content}
-              </span>
-              {/* 출처 태그 (inline compact) */}
-              {item.sourceLevel && (
-                <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
-                  item.sourceType === 'routine'
-                    ? 'bg-purple-100 text-purple-600'
-                    : 'bg-blue-100 text-blue-600'
-                }`}>
-                  {SOURCE_TAG_PREFIX[item.sourceLevel]}
-                </span>
-              )}
-              {/* 메모 뱃지 (메모가 있을 때만) */}
-              {item.note && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setNoteModalItem(item);
-                  }}
-                  className="text-amber-500 hover:text-amber-600 text-[10px] flex-shrink-0"
-                  title="메모 보기"
-                >
-                  📝
-                </button>
-              )}
-              <button
-                onClick={() => onDeleteItem(item.id)}
-                className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600 transition-all text-[10px] flex-shrink-0"
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
+      <div className="flex-1 p-2 space-y-1.5 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {items.map((item) => (
+          <CellDraggableItem
+            key={item.id}
+            item={item}
+            slotId={slotId}
+            onToggle={() => onToggleItem(item.id)}
+            onDelete={() => onDeleteItem(item.id)}
+            onOpenNote={() => setNoteModalItem(item)}
+          />
+        ))}
         {items.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs py-4">
             <span className="text-2xl mb-1">📥</span>
@@ -618,6 +659,96 @@ function GridCell({
           onClose={() => setNoteModalItem(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 시간대 슬롯 내 드래그 가능한 아이템 컴포넌트
+// ═══════════════════════════════════════════════════════════════
+function TimeSlotDraggableItem({
+  item,
+  slotId,
+  onToggle,
+  onDelete,
+  onOpenNote,
+}: {
+  item: Item;
+  slotId: string;
+  onToggle: () => void;
+  onDelete: () => void;
+  onOpenNote: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `timeslot-${slotId}-${item.id}`,
+    data: { item, from: 'timeslot', sourceSlotId: slotId },
+  });
+
+  const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`
+        group flex items-center gap-1.5 p-2 rounded-lg text-sm cursor-grab
+        ${item.color || 'bg-white'} border border-gray-100 shadow-sm
+        ${item.isCompleted ? 'opacity-60' : ''}
+        ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
+        hover:shadow-md hover:border-blue-300 transition-all
+      `}
+      style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onOpenNote();
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={item.isCompleted}
+        onChange={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 accent-blue-500 flex-shrink-0"
+      />
+      <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+        {item.content}
+      </span>
+      {/* 출처 태그 */}
+      {item.sourceLevel && (
+        <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
+          item.sourceType === 'routine'
+            ? 'bg-purple-100 text-purple-600'
+            : 'bg-blue-100 text-blue-600'
+        }`}>
+          {SOURCE_TAG_PREFIX[item.sourceLevel]}
+        </span>
+      )}
+      {/* 메모 뱃지 */}
+      {item.note && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenNote();
+          }}
+          className="text-amber-500 hover:text-amber-600 text-xs flex-shrink-0"
+          title="메모 보기"
+        >
+          📝
+        </button>
+      )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
+      >
+        ×
+      </button>
     </div>
   );
 }
@@ -704,58 +835,16 @@ function TimeSlotCell({
 
       {/* 배정된 아이템들 */}
       <div className="flex-1 p-2 space-y-1.5 overflow-y-auto">
-        {items.map((item) => {
-          const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
-          return (
-            <div
-              key={item.id}
-              className={`
-                group flex items-center gap-1.5 p-2 rounded-lg text-sm
-                ${item.color || 'bg-white'} border border-gray-100 shadow-sm
-                ${item.isCompleted ? 'opacity-60' : ''}
-                hover:shadow-md transition-all
-              `}
-              style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
-              onDoubleClick={() => setNoteModalItem(item)}
-            >
-              <input
-                type="checkbox"
-                checked={item.isCompleted}
-                onChange={() => onToggleItem(item.id)}
-                className="w-4 h-4 accent-blue-500 flex-shrink-0"
-              />
-              <span className={`flex-1 truncate ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-                {item.content}
-              </span>
-              {/* 출처 태그 (inline compact) */}
-              {item.sourceLevel && (
-                <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
-                  item.sourceType === 'routine'
-                    ? 'bg-purple-100 text-purple-600'
-                    : 'bg-blue-100 text-blue-600'
-                }`}>
-                  {SOURCE_TAG_PREFIX[item.sourceLevel]}
-                </span>
-              )}
-              {/* 메모 뱃지 (메모가 있을 때만) */}
-              {item.note && (
-                <button
-                  onClick={() => setNoteModalItem(item)}
-                  className="text-amber-500 hover:text-amber-600 text-xs flex-shrink-0"
-                  title="메모 보기"
-                >
-                  📝
-                </button>
-              )}
-              <button
-                onClick={() => onDeleteItem(item.id)}
-                className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all flex-shrink-0"
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
+        {items.map((item) => (
+          <TimeSlotDraggableItem
+            key={item.id}
+            item={item}
+            slotId={slotId}
+            onToggle={() => onToggleItem(item.id)}
+            onDelete={() => onDeleteItem(item.id)}
+            onOpenNote={() => setNoteModalItem(item)}
+          />
+        ))}
         {items.length === 0 && (
           <div className="flex items-center justify-center h-full text-gray-400 text-sm py-8">
             드래그하여 추가
@@ -838,6 +927,8 @@ export default function FractalView() {
     updateItemNote,
     assignToSlot,
     assignToTimeSlot,
+    moveSlotItem,
+    moveTimeSlotItem,
     toggleComplete,
     getProgress,
     ensurePeriod,
@@ -846,7 +937,7 @@ export default function FractalView() {
     setBaseYear,
   } = usePlanStore();
 
-  const [activeItem, setActiveItem] = useState<{ item: Item; from: 'todo' | 'routine' } | null>(null);
+  const [activeItem, setActiveItem] = useState<{ item: Item; from: 'todo' | 'routine' | 'cell' | 'timeslot' } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [editingField, setEditingField] = useState<'goal' | 'motto' | null>(null);
   const [memoInput, setMemoInput] = useState('');
@@ -875,7 +966,10 @@ export default function FractalView() {
 
   // 드래그 시작
   const handleDragStart = (event: DragStartEvent) => {
-    const data = event.active.data.current as { item: Item; from: 'todo' | 'routine' } | undefined;
+    const data = event.active.data.current as {
+      item: Item;
+      from: 'todo' | 'routine' | 'cell' | 'timeslot';
+    } | undefined;
     if (data) {
       setActiveItem({ item: data.item, from: data.from });
     }
@@ -888,7 +982,11 @@ export default function FractalView() {
     const { active, over } = event;
     if (!over) return;
 
-    const data = active.data.current as { item: Item; from: 'todo' | 'routine' } | undefined;
+    const data = active.data.current as {
+      item: Item;
+      from: 'todo' | 'routine' | 'cell' | 'timeslot';
+      sourceSlotId?: string;
+    } | undefined;
     if (!data) return;
 
     const targetSlotId = over.id as string;
@@ -899,7 +997,13 @@ export default function FractalView() {
         const parts = targetSlotId.split('-');
         const timeSlot = parts[parts.length - 1] as TimeSlot;
         if (TIME_SLOTS.includes(timeSlot)) {
-          assignToTimeSlot(data.item.id, data.from, timeSlot);
+          // 시간대 슬롯에서 다른 시간대 슬롯으로 이동
+          if (data.from === 'timeslot' && data.sourceSlotId) {
+            moveTimeSlotItem(data.item.id, data.sourceSlotId, targetSlotId);
+          } else if (data.from === 'todo' || data.from === 'routine') {
+            // 좌우 패널에서 시간대 슬롯으로 드래그
+            assignToTimeSlot(data.item.id, data.from, timeSlot);
+          }
         }
       }
       return;
@@ -907,7 +1011,13 @@ export default function FractalView() {
 
     // 다른 레벨: 유효한 슬롯인지 확인
     if (childPeriodIds.includes(targetSlotId)) {
-      assignToSlot(data.item.id, data.from, targetSlotId);
+      // 셀에서 다른 셀로 이동
+      if (data.from === 'cell' && data.sourceSlotId) {
+        moveSlotItem(data.item.id, data.sourceSlotId, targetSlotId);
+      } else if (data.from === 'todo' || data.from === 'routine') {
+        // 좌우 패널에서 셀로 드래그
+        assignToSlot(data.item.id, data.from, targetSlotId);
+      }
     }
   };
 
