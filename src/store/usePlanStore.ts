@@ -176,13 +176,15 @@ export const getChildPeriodIds = (parentId: string, baseYear: number): string[] 
       }
       break;
 
-    case 'FIVE_YEAR':
-      // 5개 년도
-      const startYear = baseYear + (parsed.fiveYearIndex || 0) * 5;
+    case 'FIVE_YEAR': {
+      // 5개 년도 (fiveYearIndex를 0-5로 제한)
+      const validIndex = Math.max(0, Math.min(5, parsed.fiveYearIndex || 0));
+      const startYear = baseYear + validIndex * 5;
       for (let i = 0; i < 5; i++) {
         ids.push(getPeriodId('YEAR', baseYear, { year: startYear + i }));
       }
       break;
+    }
 
     case 'YEAR':
       // 4분기
@@ -225,28 +227,65 @@ export const getChildPeriodIds = (parentId: string, baseYear: number): string[] 
   return ids;
 };
 
-// 슬롯 라벨 생성
+// 슬롯 라벨 생성 (각 레벨별 상세 날짜 정보 포함)
 export const getSlotLabel = (childId: string, baseYear: number): string => {
   const parsed = parsePeriodId(childId);
 
   switch (parsed.level) {
     case 'FIVE_YEAR': {
-      const startYear = baseYear + (parsed.fiveYearIndex || 0) * 5;
+      // fiveYearIndex를 0-5로 제한
+      const validIndex = Math.max(0, Math.min(5, parsed.fiveYearIndex || 0));
+      const startYear = baseYear + validIndex * 5;
       const endYear = startYear + 4;
-      return `${startYear}~${endYear}`;
+      return `${startYear}~${endYear}년`;
     }
     case 'YEAR':
       return `${parsed.year}년`;
+    case 'QUARTER': {
+      // Q1 (1~3월) 형식으로 상세 표시
+      const q = parsed.quarter || 1;
+      const startMonth = (q - 1) * 3 + 1;
+      const endMonth = startMonth + 2;
+      return `Q${q} (${startMonth}~${endMonth}월)`;
+    }
+    case 'MONTH':
+      // 연도와 함께 표시: "2026년 1월"
+      return `${parsed.year}년 ${parsed.month}월`;
+    case 'WEEK':
+      return `${parsed.week}주차`;
+    case 'DAY': {
+      // "1월 6일 (월)" 형식으로 더 읽기 쉽게
+      const date = new Date(parsed.year!, parsed.month! - 1, parsed.day);
+      const days = ['일', '월', '화', '수', '목', '금', '토'];
+      return `${parsed.month}월 ${parsed.day}일 (${days[date.getDay()]})`;
+    }
+    default:
+      return childId;
+  }
+};
+
+// 간단한 슬롯 라벨 (공간이 좁을 때 사용)
+export const getSlotLabelShort = (childId: string, baseYear: number): string => {
+  const parsed = parsePeriodId(childId);
+
+  switch (parsed.level) {
+    case 'FIVE_YEAR': {
+      const validIndex = Math.max(0, Math.min(5, parsed.fiveYearIndex || 0));
+      const startYear = baseYear + validIndex * 5;
+      return `${startYear}~`;
+    }
+    case 'YEAR':
+      return `${parsed.year}`;
     case 'QUARTER':
       return `Q${parsed.quarter}`;
     case 'MONTH':
       return `${parsed.month}월`;
     case 'WEEK':
-      return `${parsed.week}주차`;
+      return `${parsed.week}주`;
     case 'DAY': {
       const date = new Date(parsed.year!, parsed.month! - 1, parsed.day);
       const days = ['일', '월', '화', '수', '목', '금', '토'];
-      return `${parsed.month}/${parsed.day} (${days[date.getDay()]})`;
+      return `${parsed.day}(${days[date.getDay()]})`;
     }
     default:
       return childId;
@@ -415,7 +454,9 @@ export const getParentPeriodId = (childId: string, baseYear: number): string | n
     case 'FIVE_YEAR':
       return '30y';
     case 'YEAR': {
-      const fiveYearIndex = Math.floor((parsed.year! - baseYear) / 5);
+      // fiveYearIndex를 0-5 범위로 제한 (30년 내)
+      const rawIndex = Math.floor((parsed.year! - baseYear) / 5);
+      const fiveYearIndex = Math.max(0, Math.min(5, rawIndex));
       return `5y-${fiveYearIndex}`;
     }
     case 'QUARTER':

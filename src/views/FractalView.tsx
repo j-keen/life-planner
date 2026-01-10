@@ -18,6 +18,7 @@ import {
   usePlanStore,
   getChildPeriodIds,
   getSlotLabel,
+  getSlotLabelShort,
   parsePeriodId,
   getTimeSlotId,
   getAdjacentPeriodId,
@@ -1056,7 +1057,9 @@ export default function FractalView() {
       case 'THIRTY_YEAR':
         return `${baseYear}~${baseYear + 29} (30년)`;
       case 'FIVE_YEAR': {
-        const startYear = baseYear + (parsed.fiveYearIndex || 0) * 5;
+        // fiveYearIndex를 0-5로 제한
+        const validIndex = Math.max(0, Math.min(5, parsed.fiveYearIndex || 0));
+        const startYear = baseYear + validIndex * 5;
         const endYear = startYear + 4;
         return `${startYear}~${endYear} (5년)`;
       }
@@ -1501,7 +1504,7 @@ export default function FractalView() {
                   <GridCell
                     key={childId}
                     slotId={childId}
-                    label={getSlotLabel(childId, baseYear)}
+                    label={isMobile ? getSlotLabelShort(childId, baseYear) : getSlotLabel(childId, baseYear)}
                     items={period.slots[childId] || []}
                     onDrillDown={() => drillDown(childId)}
                     onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}

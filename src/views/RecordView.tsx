@@ -180,7 +180,9 @@ function RecordView() {
       case 'YEAR':
         return `${parsed.year}년`;
       case 'FIVE_YEAR': {
-        const startYear = baseYear + (parsed.fiveYearIndex || 0) * 5;
+        // fiveYearIndex를 0-5로 제한
+        const validIndex = Math.max(0, Math.min(5, parsed.fiveYearIndex || 0));
+        const startYear = baseYear + validIndex * 5;
         return `${startYear}~${startYear + 4}년`;
       }
       case 'THIRTY_YEAR':
