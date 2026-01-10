@@ -24,7 +24,7 @@ import {
   getISOWeek,
   getISOWeekYear,
 } from '../store/usePlanStore';
-import { Item, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX, Category, CATEGORIES, CATEGORY_CONFIG } from '../types/plan';
+import { Item, Level, LEVELS, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX, Category, CATEGORIES, CATEGORY_CONFIG } from '../types/plan';
 import { parseDayPeriodId, isHolidayOrWeekend } from '../lib/holidays';
 
 // ═══════════════════════════════════════════════════════════════
@@ -983,62 +983,110 @@ export default function FractalView() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex flex-col h-full bg-slate-100">
+      <div className="flex flex-col h-full bg-gray-50">
         {/* ═══════════════════════════════════════════════════════ */}
-        {/* 뷰/시간대 인지 배너 (큰 헤더) */}
+        {/* 통합 헤더 - 네비게이션 중앙 집중 */}
         {/* ═══════════════════════════════════════════════════════ */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-3 md:px-6 py-2 md:py-3 shadow-md">
+        <div className="bg-white border-b border-gray-200 px-3 md:px-4 py-2 md:py-3">
           <div className="flex items-center justify-between">
-            {/* 좌측: 기간 제목 + 뷰 타입 */}
-            <div className="flex items-center gap-2 md:gap-4">
-              {/* 뒤로가기 (상위 레벨로) */}
+            {/* 좌측: 상위 레벨 이동 */}
+            <div className="w-20 flex justify-start">
               {currentLevel !== 'THIRTY_YEAR' && (
                 <button
                   onClick={drillUp}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/20 hover:bg-white/30 transition-all text-white text-sm font-medium"
+                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
                   title="상위 레벨로"
                 >
-                  ↑
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
                 </button>
               )}
-              <div>
-                <h1 className="text-lg md:text-2xl font-bold leading-tight">
-                  {getPeriodTitle()}
-                </h1>
-                <span className="inline-flex items-center px-2 py-0.5 mt-0.5 rounded-full text-xs font-medium bg-white/20">
-                  {config.label} 뷰
-                </span>
-              </div>
             </div>
 
-            {/* 우측: 네비게이션 버튼 */}
-            <div className="flex items-center gap-1 md:gap-2">
-              {/* 이전/다음 네비게이션 */}
-              {currentLevel !== 'THIRTY_YEAR' && (
-                <div className="flex items-center bg-white/20 rounded-lg">
+            {/* 중앙: 기간 네비게이션 (핵심) */}
+            <div className="flex flex-col items-center">
+              <div className="flex items-center gap-1 md:gap-2">
+                {/* 이전 */}
+                {currentLevel !== 'THIRTY_YEAR' && (
                   <button
                     onClick={() => {
                       const prevId = getAdjacentPeriodId(currentPeriodId, 'prev', baseYear);
                       if (prevId) usePlanStore.getState().navigateTo(prevId);
                     }}
-                    className="w-8 h-8 flex items-center justify-center rounded-l-lg hover:bg-white/30 transition-all text-white text-sm"
-                    title="이전"
+                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
                   >
-                    ◀
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
                   </button>
+                )}
+
+                {/* 기간 제목 */}
+                <h1 className="text-lg md:text-xl font-bold text-gray-900 min-w-[140px] md:min-w-[180px] text-center">
+                  {getPeriodTitle()}
+                </h1>
+
+                {/* 다음 */}
+                {currentLevel !== 'THIRTY_YEAR' && (
                   <button
                     onClick={() => {
                       const nextId = getAdjacentPeriodId(currentPeriodId, 'next', baseYear);
                       if (nextId) usePlanStore.getState().navigateTo(nextId);
                     }}
-                    className="w-8 h-8 flex items-center justify-center rounded-r-lg hover:bg-white/30 transition-all text-white text-sm"
-                    title="다음"
+                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
                   >
-                    ▶
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
+              {/* 뷰 레벨 탭 - 제목 아래 */}
+              <div className="flex items-center gap-0.5 mt-1">
+                {LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => {
+                      const now = new Date();
+                      const year = now.getFullYear();
+                      const month = now.getMonth() + 1;
+                      let targetId = '';
+                      switch (level) {
+                        case 'THIRTY_YEAR': targetId = '30y'; break;
+                        case 'FIVE_YEAR': {
+                          const idx = Math.floor((year - baseYear) / 5);
+                          targetId = `5y-${baseYear + Math.max(0, idx) * 5}`;
+                          break;
+                        }
+                        case 'YEAR': targetId = `y-${year}`; break;
+                        case 'QUARTER': targetId = `q-${year}-${Math.ceil(month / 3)}`; break;
+                        case 'MONTH': targetId = `m-${year}-${String(month).padStart(2, '0')}`; break;
+                        case 'WEEK': {
+                          const weekNum = getISOWeek(now);
+                          const weekYear = getISOWeekYear(now);
+                          targetId = `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
+                          break;
+                        }
+                        case 'DAY': targetId = `d-${year}-${String(month).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; break;
+                      }
+                      usePlanStore.getState().navigateTo(targetId);
+                    }}
+                    className={`px-2 py-0.5 text-xs rounded-md transition-colors ${
+                      currentLevel === level
+                        ? 'bg-blue-100 text-blue-700 font-medium'
+                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                    }`}
+                  >
+                    {LEVEL_CONFIG[level].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 우측: 오늘 버튼 + 계획/기록 토글 */}
+            <div className="w-20 flex justify-end items-center gap-2">
               {/* 현재로 이동 버튼 */}
               {currentLevel !== 'THIRTY_YEAR' && currentLevel !== 'FIVE_YEAR' && (
                 <button
@@ -1061,7 +1109,7 @@ export default function FractalView() {
                     }
                     if (targetId) usePlanStore.getState().navigateTo(targetId);
                   }}
-                  className="px-3 py-1.5 text-xs font-medium bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-all"
+                  className="px-2.5 py-1 text-xs font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
                   {currentLevel === 'DAY' ? '오늘' : currentLevel === 'WEEK' ? '이번주' : currentLevel === 'MONTH' ? '이번달' : currentLevel === 'QUARTER' ? '이번분기' : '올해'}
                 </button>
@@ -1073,7 +1121,7 @@ export default function FractalView() {
         {/* ═══════════════════════════════════════════════════════ */}
         {/* 목표/다짐 영역 */}
         {/* ═══════════════════════════════════════════════════════ */}
-        <div className="px-2 md:px-4 py-2 bg-white border-b border-slate-200 shadow-sm">
+        <div className="px-2 md:px-4 py-2 bg-white border-b border-gray-200">
           {/* 목표 + 다짐 + 토글 */}
           <div className="flex items-center gap-1 md:gap-2">
             {/* 목표 인라인 입력 (데스크톱만) */}

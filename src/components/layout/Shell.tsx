@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePlanStore, getPeriodId, getISOWeek, getISOWeekYear } from '@/store/usePlanStore';
-import { Level, LEVEL_CONFIG, LEVELS } from '@/types/plan';
+import { usePlanStore } from '@/store/usePlanStore';
 import { ChatAssistant } from '@/components/ChatAssistant';
 import { CloudSync } from '@/components/CloudSync';
 import { SearchModal } from '@/components/SearchModal';
@@ -14,7 +13,7 @@ interface ShellProps {
 }
 
 export const Shell: React.FC<ShellProps> = ({ children }) => {
-  const { currentLevel, baseYear, setBaseYear, navigateTo } = usePlanStore();
+  const { baseYear, setBaseYear } = usePlanStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
@@ -67,75 +66,11 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleLevelClick = (level: Level) => {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    const currentQuarter = Math.ceil(currentMonth / 3);
-
-    let periodId: string;
-
-    switch (level) {
-      case 'THIRTY_YEAR':
-        periodId = '30y';
-        break;
-      case 'FIVE_YEAR':
-        // 현재 연도에 해당하는 5년 구간
-        const fiveYearIndex = Math.floor((currentYear - baseYear) / 5);
-        periodId = getPeriodId('FIVE_YEAR', baseYear, { fiveYearIndex: Math.max(0, fiveYearIndex) });
-        break;
-      case 'YEAR':
-        periodId = getPeriodId('YEAR', baseYear, { year: currentYear });
-        break;
-      case 'QUARTER':
-        periodId = getPeriodId('QUARTER', baseYear, { year: currentYear, quarter: currentQuarter });
-        break;
-      case 'MONTH':
-        periodId = getPeriodId('MONTH', baseYear, { year: currentYear, month: currentMonth });
-        break;
-      case 'WEEK': {
-        // ISO 주차 사용 (1월 초가 전년도 주차, 12월 말이 다음해 주차일 수 있음)
-        const weekNum = getISOWeek(now);
-        const weekYear = getISOWeekYear(now);
-        periodId = getPeriodId('WEEK', baseYear, { year: weekYear, week: weekNum });
-        break;
-      }
-      case 'DAY':
-        periodId = getPeriodId('DAY', baseYear, {
-          year: currentYear,
-          month: currentMonth,
-          day: now.getDate()
-        });
-        break;
-      default:
-        periodId = '30y';
-    }
-
-    navigateTo(periodId);
-  };
-
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-50 text-gray-800">
       {/* Header / Nav */}
-      <header className="h-14 border-b border-gray-200 bg-white shadow-sm px-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="font-bold text-lg text-gray-900">Life Planner</h1>
-          <nav className="flex gap-1 text-sm bg-gray-100 p-1 rounded-lg">
-            {LEVELS.map((level) => (
-              <button
-                key={level}
-                onClick={() => handleLevelClick(level)}
-                className={`px-3 py-1.5 rounded-md transition-all ${
-                  currentLevel === level
-                    ? 'bg-white shadow-sm text-blue-600 font-medium'
-                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                {LEVEL_CONFIG[level].label}
-              </button>
-            ))}
-          </nav>
-        </div>
+      <header className="h-12 border-b border-gray-200 bg-white px-4 flex items-center justify-between">
+        <h1 className="font-bold text-lg text-gray-900">Life Planner</h1>
 
         <div className="flex items-center gap-4">
           {/* 검색 버튼 */}
