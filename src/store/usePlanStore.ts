@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Level, Item, Period, LEVEL_CONFIG, LEVELS, TimeSlot, TIME_SLOTS, Category, DailyRecord, Mood, AnnualEvent, AnnualEventType, Memo } from '../types/plan';
+import { Level, Item, Period, LEVEL_CONFIG, LEVELS, TimeSlot, TIME_SLOTS, Category, TodoCategory, DailyRecord, Mood, AnnualEvent, AnnualEventType, Memo } from '../types/plan';
 
 // ═══════════════════════════════════════════════════════════════
 // 유틸리티 함수들
@@ -474,7 +474,7 @@ interface PlanStore {
   getInheritedMemos: (periodId: string) => Memo[];  // 상위 기간 메모 수집
 
   // 항목 CRUD
-  addItem: (content: string, to: 'todo' | 'routine', targetCount?: number, category?: Category) => void;
+  addItem: (content: string, to: 'todo' | 'routine', targetCount?: number, category?: Category, todoCategory?: TodoCategory) => void;
   updateItemCategory: (itemId: string, category: Category | undefined, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
   deleteItem: (itemId: string, from: 'todo' | 'routine' | 'slot', slotId?: string) => void;
   updateItemContent: (itemId: string, content: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
@@ -707,7 +707,7 @@ export const usePlanStore = create<PlanStore>()(
         return allMemos;
       },
 
-      addItem: (content, to, targetCount, category) => {
+      addItem: (content, to, targetCount, category, todoCategory) => {
         const { currentPeriodId, currentLevel, ensurePeriod } = get();
         const period = ensurePeriod(currentPeriodId);
 
@@ -725,7 +725,8 @@ export const usePlanStore = create<PlanStore>()(
           isCompleted: false,
           targetCount,
           currentCount: targetCount,
-          category,
+          category: to === 'routine' ? category : undefined,  // 루틴만 category 사용
+          todoCategory: to === 'todo' ? todoCategory : undefined,  // 할일만 todoCategory 사용
           originPeriodId: currentPeriodId,
           sourceLevel: to === 'routine' ? currentLevel : undefined,
           sourceType: to === 'routine' ? 'routine' : undefined,  // 뱃지 표시용

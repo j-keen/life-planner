@@ -24,23 +24,44 @@ import {
   getISOWeek,
   getISOWeekYear,
 } from '../store/usePlanStore';
-import { Item, Level, LEVELS, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX, Category, CATEGORIES, CATEGORY_CONFIG } from '../types/plan';
+import { Item, Level, LEVELS, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX, Category, CATEGORIES, CATEGORY_CONFIG, TodoCategory, TODO_CATEGORIES, TODO_CATEGORY_CONFIG } from '../types/plan';
 import { parseDayPeriodId, isHolidayOrWeekend } from '../lib/holidays';
 
 // ═══════════════════════════════════════════════════════════════
-// 카테고리별 힌트 텍스트
+// 할일 카테고리별 힌트 텍스트
 // ═══════════════════════════════════════════════════════════════
-const CATEGORY_PLACEHOLDER: Record<Category, { todo: string; routine: string }> = {
-  work: { todo: '+ 보고서 작성', routine: '+ 이메일 확인 / 2' },
-  health: { todo: '+ 건강검진 예약', routine: '+ 운동 / 3' },
-  relationship: { todo: '+ 부모님 전화', routine: '+ 연락하기 / 2' },
-  finance: { todo: '+ 공과금 납부', routine: '+ 가계부 정리 / 1' },
-  growth: { todo: '+ 책 구매', routine: '+ 독서 30분 / 5' },
-  uncategorized: { todo: '+ 할일 추가', routine: '+ 루틴 / 횟수' },
+const TODO_PLACEHOLDER: Record<TodoCategory, string> = {
+  personal: '+ 개인 할일 추가',
+  work: '+ 업무 할일 추가',
+  other: '+ 기타 할일 추가',
 };
 
 // ═══════════════════════════════════════════════════════════════
-// 카테고리 실제 border 색상 (Tailwind 클래스 → 실제 색상)
+// 루틴 카테고리별 힌트 텍스트
+// ═══════════════════════════════════════════════════════════════
+const ROUTINE_PLACEHOLDER: Record<Category, string> = {
+  work: '+ 이메일 확인 / 2',
+  health: '+ 운동 / 3',
+  relationship: '+ 연락하기 / 2',
+  finance: '+ 가계부 정리 / 1',
+  growth: '+ 독서 30분 / 5',
+  uncategorized: '+ 루틴 / 횟수',
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 할일 카테고리 border 색상
+// ═══════════════════════════════════════════════════════════════
+const getTodoCategoryBorderColor = (category: TodoCategory): string => {
+  const colors: Record<TodoCategory, string> = {
+    personal: '#10b981',    // emerald-500
+    work: '#3b82f6',        // blue-500
+    other: '#9ca3af',       // gray-400
+  };
+  return colors[category];
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 루틴 카테고리 border 색상
 // ═══════════════════════════════════════════════════════════════
 const getCategoryBorderColor = (category: Category): string => {
   const colors: Record<Category, string> = {
@@ -1399,9 +1420,9 @@ export default function FractalView() {
               </h2>
             </div>
             <div className="divide-y divide-slate-100">
-              {CATEGORIES.map((cat) => {
-                const config = CATEGORY_CONFIG[cat];
-                const categoryItems = period.todos.filter(i => i.category === cat);
+              {TODO_CATEGORIES.map((cat) => {
+                const catConfig = TODO_CATEGORY_CONFIG[cat];
+                const categoryItems = period.todos.filter(i => i.todoCategory === cat);
 
                 // 트리 구조 헬퍼
                 const itemMap = new Map(categoryItems.map(i => [i.id, i]));
@@ -1427,8 +1448,8 @@ export default function FractalView() {
                   <div key={cat} className="p-2 hover:bg-slate-50 transition-colors">
                     {/* 카테고리 헤더 */}
                     <div className="flex items-center gap-1.5 mb-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${config.dotColor}`} />
-                      <span className="text-xs font-semibold text-slate-700">{config.label}</span>
+                      <span className={`w-2.5 h-2.5 rounded-full ${catConfig.dotColor}`} />
+                      <span className="text-xs font-semibold text-slate-700">{catConfig.label}</span>
                       {categoryItems.length > 0 && (
                         <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full font-medium">{categoryItems.length}</span>
                       )}
@@ -1454,8 +1475,8 @@ export default function FractalView() {
                     </div>
                     {/* 카테고리별 추가 입력 */}
                     <AddItemInput
-                      onAdd={(content) => addItem(content, 'todo', undefined, cat)}
-                      placeholder={CATEGORY_PLACEHOLDER[cat].todo}
+                      onAdd={(content) => addItem(content, 'todo', undefined, undefined, cat)}
+                      placeholder={TODO_PLACEHOLDER[cat]}
                     />
                   </div>
                 );
@@ -1585,7 +1606,7 @@ export default function FractalView() {
                     {/* 카테고리별 추가 입력 (루틴은 횟수 지원) */}
                     <AddItemInput
                       onAdd={(content, count) => addItem(content, 'routine', count, cat)}
-                      placeholder={CATEGORY_PLACEHOLDER[cat].routine}
+                      placeholder={ROUTINE_PLACEHOLDER[cat]}
                     />
                   </div>
                 );

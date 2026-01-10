@@ -48,7 +48,48 @@ export const TIME_SLOT_CONFIG: Record<TimeSlot, {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// 카테고리 (5대 영역 + 미분류)
+// 할일 카테고리 (3개: 개인, 업무, 기타)
+// ═══════════════════════════════════════════════════════════════
+export type TodoCategory = 'personal' | 'work' | 'other';
+
+export const TODO_CATEGORIES: TodoCategory[] = ['personal', 'work', 'other'];
+
+export const TODO_CATEGORY_CONFIG: Record<TodoCategory, {
+  label: string;
+  icon: string;
+  bgColor: string;
+  textColor: string;
+  borderColor: string;
+  dotColor: string;
+}> = {
+  personal: {
+    label: '개인',
+    icon: '👤',
+    bgColor: 'bg-emerald-50',
+    textColor: 'text-emerald-700',
+    borderColor: 'border-emerald-200',
+    dotColor: 'bg-emerald-500',
+  },
+  work: {
+    label: '업무',
+    icon: '💼',
+    bgColor: 'bg-blue-50',
+    textColor: 'text-blue-700',
+    borderColor: 'border-blue-200',
+    dotColor: 'bg-blue-500',
+  },
+  other: {
+    label: '기타',
+    icon: '📌',
+    bgColor: 'bg-gray-50',
+    textColor: 'text-gray-600',
+    borderColor: 'border-gray-200',
+    dotColor: 'bg-gray-400',
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 루틴 카테고리 (5대 영역 + 미분류)
 // ═══════════════════════════════════════════════════════════════
 export type Category =
   | 'work'        // 업무/학습
@@ -218,7 +259,8 @@ export interface Item {
   content: string;
   isCompleted: boolean;
   color?: string;
-  category?: Category;  // 5대 카테고리
+  category?: Category;       // 루틴용 5대 카테고리
+  todoCategory?: TodoCategory; // 할일용 3개 카테고리
 
   // 루틴용 (예: "운동 / 3회")
   targetCount?: number;
