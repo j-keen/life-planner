@@ -53,9 +53,9 @@ const ROUTINE_PLACEHOLDER: Record<Category, string> = {
 // ═══════════════════════════════════════════════════════════════
 const getTodoCategoryBorderColor = (category: TodoCategory): string => {
   const colors: Record<TodoCategory, string> = {
-    personal: '#10b981',    // emerald-500
-    work: '#3b82f6',        // blue-500
-    other: '#9ca3af',       // gray-400
+    personal: '#06b6d4',    // cyan-500
+    work: '#6366f1',        // indigo-500
+    other: '#64748b',       // slate-500
   };
   return colors[category];
 };
