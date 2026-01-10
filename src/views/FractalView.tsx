@@ -942,8 +942,16 @@ export default function FractalView() {
   const [editingField, setEditingField] = useState<'goal' | 'motto' | null>(null);
   const [memoInput, setMemoInput] = useState('');
   const [mobileTab, setMobileTab] = useState<'todo' | 'grid' | 'routine'>('grid');
+  const [isMobile, setIsMobile] = useState(false);
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    // 화면 크기 감지 (768px = md breakpoint)
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -1463,84 +1471,43 @@ export default function FractalView() {
             ${mobileTab === 'grid' ? 'block' : 'hidden'} md:block
           `}>
             {config.childLevel ? (
-              <>
-                {/* 데스크톱 그리드 */}
-                <div
-                  className="hidden md:grid gap-2 lg:gap-4 h-full"
-                  style={getGridStyle(false)}
-                >
-                  {childPeriodIds.map((childId) => (
-                    <GridCell
-                      key={childId}
-                      slotId={childId}
-                      label={getSlotLabel(childId, baseYear)}
-                      items={period.slots[childId] || []}
-                      onDrillDown={() => drillDown(childId)}
-                      onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
-                      onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
-                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
-                    />
-                  ))}
-                </div>
-                {/* 모바일 그리드 */}
-                <div
-                  className="md:hidden grid gap-2"
-                  style={getGridStyle(true)}
-                >
-                  {childPeriodIds.map((childId) => (
-                    <GridCell
-                      key={childId}
-                      slotId={childId}
-                      label={getSlotLabel(childId, baseYear)}
-                      items={period.slots[childId] || []}
-                      onDrillDown={() => drillDown(childId)}
-                      onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
-                      onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
-                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
-                    />
-                  ))}
-                </div>
-              </>
+              /* 단일 그리드 (isMobile 상태로 레이아웃 결정) */
+              <div
+                className="grid gap-2 lg:gap-4 h-full"
+                style={getGridStyle(isMobile)}
+              >
+                {childPeriodIds.map((childId) => (
+                  <GridCell
+                    key={childId}
+                    slotId={childId}
+                    label={getSlotLabel(childId, baseYear)}
+                    items={period.slots[childId] || []}
+                    onDrillDown={() => drillDown(childId)}
+                    onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
+                    onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
+                    onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
+                  />
+                ))}
+              </div>
             ) : (
-              /* DAY 레벨: 시간대 그리드 (반응형) */
-              <>
-                {/* 데스크톱: 4x2 그리드 */}
-                <div className="hidden md:grid grid-cols-4 grid-rows-2 gap-3 h-full">
-                  {TIME_SLOTS.map((timeSlot) => {
-                    const slotId = getTimeSlotId(currentPeriodId, timeSlot);
-                    const items = period.timeSlots?.[timeSlot] || [];
-                    return (
-                      <TimeSlotCell
-                        key={timeSlot}
-                        slotId={slotId}
-                        timeSlot={timeSlot}
-                        items={items}
-                        onToggleItem={(itemId) => toggleComplete(itemId, 'slot', slotId)}
-                        onDeleteItem={(itemId) => deleteItem(itemId, 'slot', slotId)}
-                        onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', slotId)}
-                      />
-                    );
-                  })}
-                </div>
-                {/* 모바일: 세로 리스트 */}
-                <div className="md:hidden grid grid-cols-1 gap-2">
-                  {TIME_SLOTS.map((timeSlot) => {
-                    const slotId = getTimeSlotId(currentPeriodId, timeSlot);
-                    const items = period.timeSlots?.[timeSlot] || [];
-                    return (
-                      <TimeSlotCell
-                        key={timeSlot}
-                        slotId={slotId}
-                        timeSlot={timeSlot}
-                        items={items}
-                        onToggleItem={(itemId) => toggleComplete(itemId, 'slot', slotId)}
-                        onDeleteItem={(itemId) => deleteItem(itemId, 'slot', slotId)}
-                        onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', slotId)}
-                      />
-                    );
-                  })}
-                </div>
-              </>
+              /* DAY 레벨: 시간대 그리드 (단일 렌더링) */
+              <div className={`grid gap-2 md:gap-3 h-full ${isMobile ? 'grid-cols-1' : 'grid-cols-4 grid-rows-2'}`}>
+                {TIME_SLOTS.map((timeSlot) => {
+                  const slotId = getTimeSlotId(currentPeriodId, timeSlot);
+                  const items = period.timeSlots?.[timeSlot] || [];
+                  return (
+                    <TimeSlotCell
+                      key={timeSlot}
+                      slotId={slotId}
+                      timeSlot={timeSlot}
+                      items={items}
+                      onToggleItem={(itemId) => toggleComplete(itemId, 'slot', slotId)}
+                      onDeleteItem={(itemId) => deleteItem(itemId, 'slot', slotId)}
+                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', slotId)}
+                    />
+                  );
+                })}
+              </div>
             )}
           </div>
 
