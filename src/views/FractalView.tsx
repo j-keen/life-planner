@@ -24,6 +24,7 @@ import {
   getAdjacentPeriodId,
   getISOWeek,
   getISOWeekYear,
+  getWeeksInMonth,
 } from '../store/usePlanStore';
 import { Item, Level, LEVELS, LEVEL_CONFIG, COLORS, TIME_SLOTS, TIME_SLOT_CONFIG, TimeSlot, SOURCE_TAG_PREFIX, Category, CATEGORIES, CATEGORY_CONFIG, TodoCategory, TODO_CATEGORIES, TODO_CATEGORY_CONFIG } from '../types/plan';
 import { parseDayPeriodId, isHolidayOrWeekend } from '../lib/holidays';
@@ -1070,6 +1071,9 @@ export default function FractalView() {
       case 'MONTH':
         return `${parsed.year}년 ${parsed.month}월`;
       case 'WEEK':
+        if (parsed.month) {
+          return `${parsed.year}년 ${parsed.month}월 ${parsed.week}주차`;
+        }
         return `${parsed.year}년 ${parsed.week}주차`;
       case 'DAY':
         return `${parsed.year}년 ${parsed.month}월 ${parsed.day}일`;
@@ -1092,7 +1096,7 @@ export default function FractalView() {
         case 'QUARTER':
           return { gridTemplateColumns: '1fr', gridTemplateRows: 'repeat(3, minmax(100px, auto))' };
         case 'MONTH':
-          return { gridTemplateColumns: '1fr', gridTemplateRows: 'repeat(5, minmax(80px, auto))' };
+          return { gridTemplateColumns: 'repeat(2, 1fr)', gridTemplateRows: 'repeat(3, minmax(80px, auto))' };
         case 'WEEK':
           return { gridTemplateColumns: '1fr', gridTemplateRows: 'repeat(7, minmax(80px, auto))' };
         default:
@@ -1110,7 +1114,7 @@ export default function FractalView() {
       case 'QUARTER':
         return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: '1fr' };
       case 'MONTH':
-        return { gridTemplateColumns: 'repeat(5, 1fr)', gridTemplateRows: '1fr' };
+        return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(2, 1fr)' };
       case 'WEEK':
         return { gridTemplateColumns: 'repeat(4, 1fr)', gridTemplateRows: 'repeat(2, 1fr)' };
       default:
@@ -1207,9 +1211,18 @@ export default function FractalView() {
                         case 'QUARTER': targetId = `q-${year}-${Math.ceil(month / 3)}`; break;
                         case 'MONTH': targetId = `m-${year}-${String(month).padStart(2, '0')}`; break;
                         case 'WEEK': {
-                          const weekNum = getISOWeek(now);
-                          const weekYear = getISOWeekYear(now);
-                          targetId = `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
+                          // 현재 날짜가 속한 월의 주차 계산
+                          const day = now.getDate();
+                          const weeks = getWeeksInMonth(year, month);
+                          const targetDate = new Date(year, month - 1, day);
+                          let weekNum = 1;
+                          for (const week of weeks) {
+                            if (targetDate >= week.start && targetDate <= week.end) {
+                              weekNum = week.weekNum;
+                              break;
+                            }
+                          }
+                          targetId = `w-${year}-${String(month).padStart(2, '0')}-${weekNum}`;
                           break;
                         }
                         case 'DAY': targetId = `d-${year}-${String(month).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; break;
@@ -1243,9 +1256,18 @@ export default function FractalView() {
                       case 'QUARTER': targetId = `q-${currentYear}-${Math.ceil(currentMonth / 3)}`; break;
                       case 'MONTH': targetId = `m-${currentYear}-${String(currentMonth).padStart(2, '0')}`; break;
                       case 'WEEK': {
-                        const weekNum = getISOWeek(now);
-                        const weekYear = getISOWeekYear(now);
-                        targetId = `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
+                        // 현재 날짜가 속한 월의 주차 계산
+                        const day = now.getDate();
+                        const weeks = getWeeksInMonth(currentYear, currentMonth);
+                        const targetDate = new Date(currentYear, currentMonth - 1, day);
+                        let weekNum = 1;
+                        for (const week of weeks) {
+                          if (targetDate >= week.start && targetDate <= week.end) {
+                            weekNum = week.weekNum;
+                            break;
+                          }
+                        }
+                        targetId = `w-${currentYear}-${String(currentMonth).padStart(2, '0')}-${weekNum}`;
                         break;
                       }
                       case 'DAY': targetId = `d-${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; break;

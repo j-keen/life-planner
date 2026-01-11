@@ -84,6 +84,51 @@ const getMondayOfDate = (date: Date): Date => {
   return d;
 };
 
+// 특정 월의 주차 정보 계산 (월 기준 주차 시스템)
+export const getWeeksInMonth = (year: number, month: number): { weekNum: number; start: Date; end: Date }[] => {
+  const weeks: { weekNum: number; start: Date; end: Date }[] = [];
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+
+  let weekNum = 1;
+
+  // 첫 주: 1일부터 그 주의 일요일까지
+  const firstSunday = new Date(firstDay);
+  const dayOfWeek = firstDay.getDay();
+  if (dayOfWeek === 0) {
+    // 1일이 일요일이면 1일만 첫 주
+    firstSunday.setDate(firstDay.getDate());
+  } else {
+    firstSunday.setDate(firstDay.getDate() + (7 - dayOfWeek));
+  }
+
+  if (firstSunday > lastDay) {
+    weeks.push({ weekNum: 1, start: new Date(firstDay), end: new Date(lastDay) });
+    return weeks;
+  }
+
+  weeks.push({ weekNum: weekNum++, start: new Date(firstDay), end: new Date(firstSunday) });
+
+  // 나머지 주: 월요일~일요일 (또는 월 마지막 날)
+  let currentStart = new Date(firstSunday);
+  currentStart.setDate(currentStart.getDate() + 1);
+
+  while (currentStart <= lastDay) {
+    const weekEnd = new Date(currentStart);
+    weekEnd.setDate(currentStart.getDate() + 6);
+
+    weeks.push({
+      weekNum: weekNum++,
+      start: new Date(currentStart),
+      end: weekEnd > lastDay ? new Date(lastDay) : weekEnd
+    });
+
+    currentStart.setDate(currentStart.getDate() + 7);
+  }
+
+  return weeks;
+};
+
 // ═══════════════════════════════════════════════════════════════
 // ID 체계 (실제 날짜 기반)
 // ═══════════════════════════════════════════════════════════════
@@ -151,6 +196,11 @@ export const parsePeriodId = (id: string): {
     case 'm':
       return { level: 'MONTH', year: parseInt(parts[1]), month: parseInt(parts[2]) };
     case 'w':
+      // 새 형식: w-2026-05-2 (연-월-주차)
+      if (parts.length === 4) {
+        return { level: 'WEEK', year: parseInt(parts[1]), month: parseInt(parts[2]), week: parseInt(parts[3]) };
+      }
+      // 기존 형식 호환: w-2026-17 (ISO 주차)
       return { level: 'WEEK', year: parseInt(parts[1]), week: parseInt(parts[2]) };
     case 'd':
       return { level: 'DAY', year: parseInt(parts[1]), month: parseInt(parts[2]), day: parseInt(parts[3]) };
@@ -201,27 +251,50 @@ export const getChildPeriodIds = (parentId: string, baseYear: number): string[] 
       }
       break;
 
-    case 'MONTH':
-      // 5주 (간단하게)
-      for (let w = 1; w <= 5; w++) {
-        const weekNum = ((parsed.month || 1) - 1) * 4 + w;
-        ids.push(getPeriodId('WEEK', baseYear, { year: parsed.year, week: weekNum }));
-      }
-      break;
+    case 'MONTH': {
+      // 해당 월의 실제 주차들 (월 기준 주차 시스템)
+      const year = parsed.year || baseYear;
+      const month = parsed.month || 1;
+      const weeks = getWeeksInMonth(year, month);
 
-    case 'WEEK':
-      // 7일 (월요일 ~ 일요일)
-      const monday = getMondayOfWeek(parsed.year || baseYear, parsed.week || 1);
-      for (let d = 0; d < 7; d++) {
-        const date = new Date(monday);
-        date.setDate(monday.getDate() + d);
-        ids.push(getPeriodId('DAY', baseYear, {
-          year: date.getFullYear(),
-          month: date.getMonth() + 1,
-          day: date.getDate()
-        }));
+      weeks.forEach(w => {
+        // 새 형식: w-연도-월-주차번호
+        ids.push(`w-${year}-${String(month).padStart(2, '0')}-${w.weekNum}`);
+      });
+      break;
+    }
+
+    case 'WEEK': {
+      if (parsed.month) {
+        // 새 형식: 해당 월-주차의 날짜만 표시
+        const weeks = getWeeksInMonth(parsed.year || baseYear, parsed.month);
+        const weekInfo = weeks.find(w => w.weekNum === parsed.week);
+        if (weekInfo) {
+          let current = new Date(weekInfo.start);
+          while (current <= weekInfo.end) {
+            ids.push(getPeriodId('DAY', baseYear, {
+              year: current.getFullYear(),
+              month: current.getMonth() + 1,
+              day: current.getDate()
+            }));
+            current.setDate(current.getDate() + 1);
+          }
+        }
+      } else {
+        // 기존 형식 (ISO 주차): 7일 (월요일 ~ 일요일)
+        const monday = getMondayOfWeek(parsed.year || baseYear, parsed.week || 1);
+        for (let d = 0; d < 7; d++) {
+          const date = new Date(monday);
+          date.setDate(monday.getDate() + d);
+          ids.push(getPeriodId('DAY', baseYear, {
+            year: date.getFullYear(),
+            month: date.getMonth() + 1,
+            day: date.getDate()
+          }));
+        }
       }
       break;
+    }
   }
 
   return ids;
@@ -252,7 +325,18 @@ export const getSlotLabel = (childId: string, baseYear: number): string => {
       // 연도와 함께 표시: "2026년 1월"
       return `${parsed.year}년 ${parsed.month}월`;
     case 'WEEK': {
-      // 해당 주의 월요일과 일요일 날짜 범위 표시
+      if (parsed.month) {
+        // 새 형식: 월 기준 주차
+        const weeks = getWeeksInMonth(parsed.year || baseYear, parsed.month);
+        const weekInfo = weeks.find(w => w.weekNum === parsed.week);
+        if (weekInfo) {
+          const startStr = `${weekInfo.start.getMonth() + 1}/${weekInfo.start.getDate()}`;
+          const endStr = `${weekInfo.end.getMonth() + 1}/${weekInfo.end.getDate()}`;
+          return `${parsed.week}주차 (${startStr}~${endStr})`;
+        }
+        return `${parsed.week}주차`;
+      }
+      // 기존 형식 (ISO 주차)
       const monday = getMondayOfWeek(parsed.year || baseYear, parsed.week || 1);
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
@@ -288,7 +372,16 @@ export const getSlotLabelShort = (childId: string, baseYear: number): string => 
     case 'MONTH':
       return `${parsed.month}월`;
     case 'WEEK': {
-      // 모바일: 시작 날짜만 표시
+      if (parsed.month) {
+        // 새 형식: 월 기준 주차 (시작 날짜만)
+        const weeks = getWeeksInMonth(parsed.year || baseYear, parsed.month);
+        const weekInfo = weeks.find(w => w.weekNum === parsed.week);
+        if (weekInfo) {
+          return `${weekInfo.start.getMonth() + 1}/${weekInfo.start.getDate()}~`;
+        }
+        return `${parsed.week}주`;
+      }
+      // 기존 형식 (ISO 주차)
       const monday = getMondayOfWeek(parsed.year || baseYear, parsed.week || 1);
       return `${monday.getMonth() + 1}/${monday.getDate()}~`;
     }
@@ -476,19 +569,31 @@ export const getParentPeriodId = (childId: string, baseYear: number): string | n
       return `q-${parsed.year}-${quarter}`;
     }
     case 'WEEK': {
-      // 주차에서 월 추정 (간단하게)
+      if (parsed.month) {
+        // 새 형식: 직접 월로 돌아가기
+        return `m-${parsed.year}-${String(parsed.month).padStart(2, '0')}`;
+      }
+      // 기존 형식: 주차에서 월 추정 (간단하게)
       const month = Math.ceil(parsed.week! / 4);
       return `m-${parsed.year}-${String(month).padStart(2, '0')}`;
     }
     case 'DAY': {
-      // ISO 주차 계산 (월요일 시작)
-      const date = new Date(parsed.year!, parsed.month! - 1, parsed.day);
-      const weekNum = getISOWeek(date);
-      // ISO 주차의 연도 (12월 말이 1주차일 수 있고, 1월 초가 52/53주차일 수 있음)
-      const thursday = new Date(date);
-      thursday.setDate(date.getDate() + 4 - (date.getDay() || 7));
-      const weekYear = thursday.getFullYear();
-      return `w-${weekYear}-${String(weekNum).padStart(2, '0')}`;
+      // 해당 날짜가 속한 월의 몇 번째 주인지 계산
+      const year = parsed.year!;
+      const month = parsed.month!;
+      const day = parsed.day!;
+      const weeks = getWeeksInMonth(year, month);
+
+      // 해당 날짜가 속하는 주차 찾기
+      const targetDate = new Date(year, month - 1, day);
+      for (const week of weeks) {
+        if (targetDate >= week.start && targetDate <= week.end) {
+          return `w-${year}-${String(month).padStart(2, '0')}-${week.weekNum}`;
+        }
+      }
+
+      // 찾지 못하면 1주차로 기본값
+      return `w-${year}-${String(month).padStart(2, '0')}-1`;
     }
     default:
       return null;
