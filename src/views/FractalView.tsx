@@ -332,6 +332,31 @@ function DraggableItem({
   const hasChildren = item.childIds && item.childIds.length > 0;
   const isRoot = !item.parentId;
 
+  // 카테고리 배경색 결정
+  const getCategoryColors = () => {
+    if (from === 'todo' && item.todoCategory) {
+      const config = TODO_CATEGORY_CONFIG[item.todoCategory];
+      // 배정됨: -100 (진한 색), 미배정: -50 (연한 색)
+      const bgClass = hasChildren
+        ? config.bgColor.replace('-50', '-100')  // 배정됨 (진한 색)
+        : config.bgColor;  // 미배정 (연한 색)
+      const borderClass = hasChildren
+        ? config.borderColor.replace('-200', '-300')  // 배정됨 (진한 테두리)
+        : config.borderColor;  // 미배정
+      return `${bgClass} ${borderClass}`;
+    } else if (from === 'routine' && item.category) {
+      const config = CATEGORY_CONFIG[item.category];
+      const bgClass = hasChildren
+        ? config.bgColor.replace('-50', '-100')
+        : config.bgColor;
+      const borderClass = hasChildren
+        ? config.borderColor.replace('-200', '-300')
+        : config.borderColor;
+      return `${bgClass} ${borderClass}`;
+    }
+    return hasChildren ? 'bg-slate-100 border-slate-300' : 'bg-white border-slate-200';
+  };
+
   // 숨겨진 항목은 렌더링하지 않음
   if (isHidden) return null;
 
@@ -353,9 +378,7 @@ function DraggableItem({
           group relative flex items-center gap-2 px-2 py-1.5 rounded-lg border cursor-grab
           ${item.isCompleted
             ? 'bg-green-50 border-green-300'  // 완료됨 (최우선)
-            : hasChildren
-              ? 'bg-slate-100 border-slate-300'  // 배정됨 (연한 회색)
-              : item.color || 'bg-white border-slate-200'  // 미배정 (흰색)
+            : getCategoryColors()  // 카테고리 색상 (배정 여부에 따라 진하기 다름)
           }
           ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
           hover:shadow-md hover:border-blue-400 transition-all
