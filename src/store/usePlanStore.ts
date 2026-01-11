@@ -251,8 +251,15 @@ export const getSlotLabel = (childId: string, baseYear: number): string => {
     case 'MONTH':
       // 연도와 함께 표시: "2026년 1월"
       return `${parsed.year}년 ${parsed.month}월`;
-    case 'WEEK':
-      return `${parsed.week}주차`;
+    case 'WEEK': {
+      // 해당 주의 월요일과 일요일 날짜 범위 표시
+      const monday = getMondayOfWeek(parsed.year || baseYear, parsed.week || 1);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const startStr = `${monday.getMonth() + 1}/${monday.getDate()}`;
+      const endStr = `${sunday.getMonth() + 1}/${sunday.getDate()}`;
+      return `${parsed.week}주차 (${startStr}~${endStr})`;
+    }
     case 'DAY': {
       // "1월 6일 (월)" 형식으로 더 읽기 쉽게
       const date = new Date(parsed.year!, parsed.month! - 1, parsed.day);
@@ -280,8 +287,11 @@ export const getSlotLabelShort = (childId: string, baseYear: number): string => 
       return `${parsed.quarter}분기`;
     case 'MONTH':
       return `${parsed.month}월`;
-    case 'WEEK':
-      return `${parsed.week}주`;
+    case 'WEEK': {
+      // 모바일: 시작 날짜만 표시
+      const monday = getMondayOfWeek(parsed.year || baseYear, parsed.week || 1);
+      return `${monday.getMonth() + 1}/${monday.getDate()}~`;
+    }
     case 'DAY': {
       const date = new Date(parsed.year!, parsed.month! - 1, parsed.day);
       const days = ['일', '월', '화', '수', '목', '금', '토'];
