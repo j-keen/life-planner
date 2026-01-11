@@ -535,6 +535,21 @@ function CellDraggableItem({
 
   const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
 
+  // 카테고리 기반 배경/테두리 색상 계산
+  const getCellCategoryColors = () => {
+    if (item.isCompleted) {
+      return 'bg-green-50 border-green-200';
+    }
+    if (item.todoCategory) {
+      const config = TODO_CATEGORY_CONFIG[item.todoCategory];
+      return `${config.bgColor} ${config.borderColor}`;
+    } else if (item.category) {
+      const config = CATEGORY_CONFIG[item.category];
+      return `${config.bgColor} ${config.borderColor}`;
+    }
+    return 'bg-slate-50 border-slate-200';
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -542,10 +557,9 @@ function CellDraggableItem({
       {...attributes}
       className={`
         group flex items-center gap-1.5 p-1.5 rounded-lg text-xs cursor-grab
-        ${item.color || 'bg-slate-50'} border border-slate-200
-        ${item.isCompleted ? 'bg-green-50 border-green-200' : ''}
+        ${getCellCategoryColors()}
         ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
-        hover:shadow-sm hover:bg-white hover:border-blue-300 transition-all
+        hover:shadow-sm hover:border-blue-300 transition-all
       `}
       style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
       onDoubleClick={(e) => {
