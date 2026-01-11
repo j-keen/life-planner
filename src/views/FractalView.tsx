@@ -351,9 +351,13 @@ function DraggableItem({
         {...attributes}
         className={`
           group relative flex items-center gap-2 px-2 py-1.5 rounded-lg border cursor-grab
-          ${item.color || 'bg-white'} border-slate-200
+          ${item.isCompleted
+            ? 'bg-green-50 border-green-300'  // 완료됨 (최우선)
+            : hasChildren
+              ? 'bg-slate-100 border-slate-300'  // 배정됨 (연한 회색)
+              : item.color || 'bg-white border-slate-200'  // 미배정 (흰색)
+          }
           ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
-          ${item.isCompleted ? 'bg-green-50 border-green-300' : ''}
           hover:shadow-md hover:border-blue-400 transition-all
         `}
         style={{ marginLeft: depth * 16 }}
