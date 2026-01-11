@@ -628,6 +628,7 @@ interface PlanStore {
   // 항목 CRUD
   addItem: (content: string, to: 'todo' | 'routine', targetCount?: number, category?: Category, todoCategory?: TodoCategory) => void;
   updateItemCategory: (itemId: string, category: Category | undefined, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
+  updateTodoCategory: (itemId: string, todoCategory: TodoCategory) => void;
   deleteItem: (itemId: string, from: 'todo' | 'routine' | 'slot', slotId?: string) => void;
   updateItemContent: (itemId: string, content: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
   updateItemColor: (itemId: string, color: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
@@ -944,6 +945,28 @@ export const usePlanStore = create<PlanStore>()(
         });
       },
 
+      // 할일 카테고리 변경
+      updateTodoCategory: (itemId, todoCategory) => {
+        const state = get();
+        const period = state.periods[state.currentPeriodId];
+        if (!period) return;
+
+        const updatedTodos = period.todos.map(item =>
+          item.id === itemId ? { ...item, todoCategory } : item
+        );
+
+        set({
+          periods: {
+            ...state.periods,
+            [state.currentPeriodId]: { ...period, todos: updatedTodos }
+          },
+          allItems: {
+            ...state.allItems,
+            [itemId]: { ...state.allItems[itemId], todoCategory }
+          }
+        });
+      },
+
       deleteItem: (itemId, from, slotId) => {
         const state = get();
         const period = state.periods[state.currentPeriodId];
@@ -1240,7 +1263,8 @@ export const usePlanStore = create<PlanStore>()(
           content: displayContent,
           isCompleted: false,
           color: originalItem.color,
-          category: originalItem.category,  // 카테고리 복사
+          category: originalItem.category,  // 루틴 카테고리 복사
+          todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
           parentId: originalItem.id,
           originPeriodId: currentPeriodId,
           subContent: subContent,
@@ -1299,7 +1323,8 @@ export const usePlanStore = create<PlanStore>()(
           ...newItem,
           id: genId(), // 새 ID
           parentId: newItem.id, // 슬롯 아이템이 부모
-          category: originalItem.category,  // 카테고리 복사
+          category: originalItem.category,  // 루틴 카테고리 복사
+          todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
         };
 
         // 슬롯 아이템에 전파된 아이템을 자식으로 추가 (체인 연결)
@@ -1361,7 +1386,8 @@ export const usePlanStore = create<PlanStore>()(
           content: displayContent,
           isCompleted: false,
           color: originalItem.color,
-          category: originalItem.category,  // 카테고리 복사
+          category: originalItem.category,  // 루틴 카테고리 복사
+          todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
           subContent: subContent,
           // 출처 정보 (원본의 출처 유지 또는 현재 레벨)
           sourceLevel: originalItem.sourceLevel || currentLevel,
@@ -1541,7 +1567,8 @@ export const usePlanStore = create<PlanStore>()(
           content,
           isCompleted: false,
           color: parentItem.color,
-          category: parentItem.category, // 부모 카테고리 상속
+          category: parentItem.category, // 루틴 카테고리 상속
+          todoCategory: parentItem.todoCategory, // 할일 카테고리 상속
           parentId: parentId,
           originPeriodId: currentPeriodId,
           sourceLevel: currentLevel,

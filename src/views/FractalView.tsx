@@ -576,6 +576,54 @@ function CellDraggableItem({
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 할일 카테고리 드롭 영역
+// ═══════════════════════════════════════════════════════════════
+function TodoCategoryDropZone({
+  category,
+  children
+}: {
+  category: TodoCategory;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `todo-category-${category}`
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`p-2 hover:bg-slate-50 transition-colors ${isOver ? 'bg-blue-50 ring-2 ring-blue-300 ring-inset' : ''}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 루틴 카테고리 드롭 영역
+// ═══════════════════════════════════════════════════════════════
+function RoutineCategoryDropZone({
+  category,
+  children
+}: {
+  category: Category;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `routine-category-${category}`
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`p-2 hover:bg-slate-50 transition-colors ${isOver ? 'bg-purple-50 ring-2 ring-purple-300 ring-inset' : ''}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 드롭 가능한 그리드 셀 컴포넌트
 // ═══════════════════════════════════════════════════════════════
 function GridCell({
@@ -965,6 +1013,8 @@ export default function FractalView() {
     addSubItem,
     toggleExpand,
     setBaseYear,
+    updateTodoCategory,
+    updateItemCategory,
   } = usePlanStore();
 
   const [activeItem, setActiveItem] = useState<{ item: Item; from: 'todo' | 'routine' | 'cell' | 'timeslot' } | null>(null);
@@ -1028,6 +1078,24 @@ export default function FractalView() {
     if (!data) return;
 
     const targetSlotId = over.id as string;
+
+    // 할일 카테고리로 드롭
+    if (targetSlotId.startsWith('todo-category-')) {
+      const newCategory = targetSlotId.replace('todo-category-', '') as TodoCategory;
+      if (data.from === 'todo') {
+        updateTodoCategory(data.item.id, newCategory);
+      }
+      return;
+    }
+
+    // 루틴 카테고리로 드롭
+    if (targetSlotId.startsWith('routine-category-')) {
+      const newCategory = targetSlotId.replace('routine-category-', '') as Category;
+      if (data.from === 'routine') {
+        updateItemCategory(data.item.id, newCategory, 'routine');
+      }
+      return;
+    }
 
     // DAY 레벨: 시간대 슬롯 처리
     if (currentLevel === 'DAY') {
@@ -1478,7 +1546,7 @@ export default function FractalView() {
                 };
 
                 return (
-                  <div key={cat} className="p-2 hover:bg-slate-50 transition-colors">
+                  <TodoCategoryDropZone key={cat} category={cat}>
                     {/* 카테고리 헤더 */}
                     <div className="flex items-center gap-1.5 mb-2">
                       <span className={`w-2.5 h-2.5 rounded-full ${catConfig.dotColor}`} />
@@ -1511,7 +1579,7 @@ export default function FractalView() {
                       onAdd={(content) => addItem(content, 'todo', undefined, undefined, cat)}
                       placeholder={TODO_PLACEHOLDER[cat]}
                     />
-                  </div>
+                  </TodoCategoryDropZone>
                 );
               })}
             </div>
@@ -1619,7 +1687,7 @@ export default function FractalView() {
                 };
 
                 return (
-                  <div key={cat} className="p-2 hover:bg-slate-50 transition-colors">
+                  <RoutineCategoryDropZone key={cat} category={cat}>
                     {/* 카테고리 헤더 */}
                     <div className="flex items-center gap-1.5 mb-2">
                       <span className={`w-2.5 h-2.5 rounded-full ${catConfig.dotColor}`} />
@@ -1652,7 +1720,7 @@ export default function FractalView() {
                       onAdd={(content, count) => addItem(content, 'routine', count, cat)}
                       placeholder={ROUTINE_PLACEHOLDER[cat]}
                     />
-                  </div>
+                  </RoutineCategoryDropZone>
                 );
               })}
             </div>
