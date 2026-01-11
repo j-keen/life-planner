@@ -586,6 +586,7 @@ function GridCell({
   onToggleItem,
   onDeleteItem,
   onUpdateNote,
+  isOutsideMonth = false,
 }: {
   slotId: string;
   label: string;
@@ -594,6 +595,7 @@ function GridCell({
   onToggleItem: (itemId: string) => void;
   onDeleteItem: (itemId: string) => void;
   onUpdateNote: (itemId: string, note: string) => void;
+  isOutsideMonth?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: slotId });
   const [noteModalItem, setNoteModalItem] = useState<Item | null>(null);
@@ -606,16 +608,20 @@ function GridCell({
   const date = parseDayPeriodId(slotId);
   const dayInfo = date ? isHolidayOrWeekend(date) : null;
 
-  // 색상 결정: 공휴일/일요일 > 토요일 > 기본
+  // 색상 결정: 다른 달 > 공휴일/일요일 > 토요일 > 기본
   const getColors = () => {
-    if (!dayInfo) return { bg: 'bg-white', header: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-800' };
+    // 다른 달 날짜는 회색 처리
+    if (isOutsideMonth) {
+      return { bg: 'bg-gray-100', header: 'bg-gray-200', border: 'border-gray-300', text: 'text-gray-400', opacity: 'opacity-60' };
+    }
+    if (!dayInfo) return { bg: 'bg-white', header: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-800', opacity: '' };
     if (dayInfo.isHoliday || dayInfo.isSunday) {
-      return { bg: 'bg-red-50', header: 'bg-red-100', border: 'border-red-200', text: 'text-red-700' };
+      return { bg: 'bg-red-50', header: 'bg-red-100', border: 'border-red-200', text: 'text-red-700', opacity: '' };
     }
     if (dayInfo.isSaturday) {
-      return { bg: 'bg-blue-50', header: 'bg-blue-100', border: 'border-blue-200', text: 'text-blue-700' };
+      return { bg: 'bg-blue-50', header: 'bg-blue-100', border: 'border-blue-200', text: 'text-blue-700', opacity: '' };
     }
-    return { bg: 'bg-white', header: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-800' };
+    return { bg: 'bg-white', header: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-800', opacity: '' };
   };
   const colors = getColors();
 
@@ -626,6 +632,7 @@ function GridCell({
       className={`
         flex flex-col rounded-xl cursor-pointer
         min-h-[140px] transition-all overflow-hidden
+        ${colors.opacity}
         ${isOver
           ? 'border-2 border-blue-500 bg-blue-50 shadow-lg scale-[1.02]'
           : `border ${colors.border} ${colors.bg} hover:border-blue-400 hover:shadow-md`}
@@ -1523,18 +1530,29 @@ export default function FractalView() {
                 className="grid gap-2 lg:gap-4 h-full"
                 style={getGridStyle(isMobile)}
               >
-                {childPeriodIds.map((childId) => (
-                  <GridCell
-                    key={childId}
-                    slotId={childId}
-                    label={isMobile ? getSlotLabelShort(childId, baseYear) : getSlotLabel(childId, baseYear)}
-                    items={period.slots[childId] || []}
-                    onDrillDown={() => drillDown(childId)}
-                    onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
-                    onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
-                    onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
-                  />
-                ))}
+                {childPeriodIds.map((childId) => {
+                  // WEEK 레벨에서 DAY 셀이 다른 달에 속하는지 확인
+                  const currentParsed = parsePeriodId(currentPeriodId);
+                  const childParsed = parsePeriodId(childId);
+                  const isOutsideMonth = currentParsed.level === 'WEEK' &&
+                    currentParsed.month !== undefined &&
+                    childParsed.month !== undefined &&
+                    childParsed.month !== currentParsed.month;
+
+                  return (
+                    <GridCell
+                      key={childId}
+                      slotId={childId}
+                      label={isMobile ? getSlotLabelShort(childId, baseYear) : getSlotLabel(childId, baseYear)}
+                      items={period.slots[childId] || []}
+                      onDrillDown={() => drillDown(childId)}
+                      onToggleItem={(itemId) => toggleComplete(itemId, 'slot', childId)}
+                      onDeleteItem={(itemId) => deleteItem(itemId, 'slot', childId)}
+                      onUpdateNote={(itemId, note) => updateItemNote(itemId, note, 'slot', childId)}
+                      isOutsideMonth={isOutsideMonth}
+                    />
+                  );
+                })}
               </div>
             ) : (
               /* DAY 레벨: 시간대 그리드 (단일 렌더링) */

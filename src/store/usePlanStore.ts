@@ -84,46 +84,42 @@ const getMondayOfDate = (date: Date): Date => {
   return d;
 };
 
-// 특정 월의 주차 정보 계산 (월 기준 주차 시스템)
-export const getWeeksInMonth = (year: number, month: number): { weekNum: number; start: Date; end: Date }[] => {
-  const weeks: { weekNum: number; start: Date; end: Date }[] = [];
+// 특정 월의 주차 정보 계산 (풀 주차: 항상 월~일 7일)
+export const getWeeksInMonth = (year: number, month: number): { weekNum: number; start: Date; end: Date; targetMonth: number }[] => {
+  const weeks: { weekNum: number; start: Date; end: Date; targetMonth: number }[] = [];
   const firstDay = new Date(year, month - 1, 1);
   const lastDay = new Date(year, month, 0);
 
+  // 첫 주의 월요일 찾기 (1일이 포함된 주의 월요일)
+  const firstDayOfWeek = firstDay.getDay(); // 0=일, 1=월, ..., 6=토
+  const firstMonday = new Date(firstDay);
+  if (firstDayOfWeek === 0) {
+    // 1일이 일요일이면 6일 전이 월요일
+    firstMonday.setDate(firstDay.getDate() - 6);
+  } else if (firstDayOfWeek !== 1) {
+    // 1일이 월요일이 아니면 해당 주의 월요일로 이동
+    firstMonday.setDate(firstDay.getDate() - (firstDayOfWeek - 1));
+  }
+
   let weekNum = 1;
+  let currentMonday = new Date(firstMonday);
 
-  // 첫 주: 1일부터 그 주의 일요일까지
-  const firstSunday = new Date(firstDay);
-  const dayOfWeek = firstDay.getDay();
-  if (dayOfWeek === 0) {
-    // 1일이 일요일이면 1일만 첫 주
-    firstSunday.setDate(firstDay.getDate());
-  } else {
-    firstSunday.setDate(firstDay.getDate() + (7 - dayOfWeek));
-  }
-
-  if (firstSunday > lastDay) {
-    weeks.push({ weekNum: 1, start: new Date(firstDay), end: new Date(lastDay) });
-    return weeks;
-  }
-
-  weeks.push({ weekNum: weekNum++, start: new Date(firstDay), end: new Date(firstSunday) });
-
-  // 나머지 주: 월요일~일요일 (또는 월 마지막 날)
-  let currentStart = new Date(firstSunday);
-  currentStart.setDate(currentStart.getDate() + 1);
-
-  while (currentStart <= lastDay) {
-    const weekEnd = new Date(currentStart);
-    weekEnd.setDate(currentStart.getDate() + 6);
+  // 마지막 날이 포함된 주까지 반복
+  while (true) {
+    const weekSunday = new Date(currentMonday);
+    weekSunday.setDate(currentMonday.getDate() + 6);
 
     weeks.push({
       weekNum: weekNum++,
-      start: new Date(currentStart),
-      end: weekEnd > lastDay ? new Date(lastDay) : weekEnd
+      start: new Date(currentMonday),
+      end: new Date(weekSunday),
+      targetMonth: month  // 기준 월 저장 (다른 달 날짜 회색 처리용)
     });
 
-    currentStart.setDate(currentStart.getDate() + 7);
+    // 이 주가 마지막 날을 포함하면 종료
+    if (weekSunday >= lastDay) break;
+
+    currentMonday.setDate(currentMonday.getDate() + 7);
   }
 
   return weeks;
