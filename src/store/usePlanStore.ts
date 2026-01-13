@@ -818,8 +818,11 @@ export const usePlanStore = create<PlanStore>()(
         const allMemos: Memo[] = [];
         let currentId: string | null = periodId;
 
+        // 무한루프 방지
+        let safeguard = 0;
+
         // 부모 체인을 따라 올라가며 메모 수집
-        while (currentId) {
+        while (currentId && safeguard < 20) {
           const period = state.periods[currentId];
           if (period) {
             // 구조화된 메모 추가
@@ -842,7 +845,11 @@ export const usePlanStore = create<PlanStore>()(
           }
 
           // 부모 기간으로 이동
-          currentId = getParentPeriodId(currentId, state.baseYear);
+          const parentId = getParentPeriodId(currentId, state.baseYear);
+          // self-reference 방지
+          if (parentId === currentId) break;
+          currentId = parentId;
+          safeguard++;
         }
 
         // 상위 레벨이 먼저 오도록 정렬 (THIRTY_YEAR → DAY 순서)
@@ -855,9 +862,17 @@ export const usePlanStore = create<PlanStore>()(
           WEEK: 5,
           DAY: 6,
         };
-        allMemos.sort((a, b) => levelOrder[a.sourceLevel] - levelOrder[b.sourceLevel]);
 
-        return allMemos;
+        // 중복 제거 (Content + sourcePeriod 기준)
+        const uniqueMemos = allMemos.filter((memo, index, self) =>
+          index === self.findIndex((t) => (
+            t.content === memo.content && t.sourcePeriodId === memo.sourcePeriodId
+          ))
+        );
+
+        uniqueMemos.sort((a, b) => levelOrder[a.sourceLevel] - levelOrder[b.sourceLevel]);
+
+        return uniqueMemos;
       },
 
       addItem: (content, to, targetCount, category, todoCategory) => {
@@ -1238,7 +1253,7 @@ export const usePlanStore = create<PlanStore>()(
       },
 
       // ═══════════════════════════════════════════════════════════
-      // 핵심: 슬롯 배정 (쪼개기)
+      // 핵심: 슬롯 배정 (쪼개기) - 계층 구조 유지 수정
       // ═══════════════════════════════════════════════════════════
       assignToSlot: (itemId, from, targetSlotId, subContent) => {
         const { currentPeriodId, currentLevel, ensurePeriod } = get();
@@ -1251,6 +1266,56 @@ export const usePlanStore = create<PlanStore>()(
         const sourceList = from === 'todo' ? period.todos : period.routines;
         const originalItem = sourceList.find((i) => i.id === itemId);
         if (!originalItem) return;
+
+        // 원본 아이템이 하위 항목인지 확인 (parentId가 있는지)
+        const parentId = originalItem.parentId;
+        let targetParentId = parentId; // 슬롯 내에서의 부모 ID
+
+        // 하위 항목이면, 타겟 슬롯에 부모가 있는지 확인하고 없으면 생성
+        const slotItems = period.slots[targetSlotId] || [];
+
+        if (parentId) {
+          const originalParent = sourceList.find(p => p.id === parentId);
+          if (originalParent) {
+            // 슬롯에 이미 같은 내용의 부모가 있는지 확인 (content와 category로 매칭)
+            // 주의: 단순 매칭은 동명이인이 있을 수 있으나, 여기서는 UX 편의성을 위해 내용 기반 매칭 사용
+            const existingParentInSlot = slotItems.find(
+              i => i.content === originalParent.content &&
+                i.category === originalParent.category &&
+                !i.parentId // 최상위 항목이어야 함
+            );
+
+            if (existingParentInSlot) {
+              targetParentId = existingParentInSlot.id;
+            } else {
+              // 부모 클론 생성
+              const newParentId = genId();
+              const parentClone: Item = {
+                id: newParentId,
+                content: originalParent.content,
+                isCompleted: false,
+                color: originalParent.color,
+                category: originalParent.category,
+                todoCategory: originalParent.todoCategory,
+                originPeriodId: currentPeriodId,
+                sourceLevel: currentLevel,
+                sourceType: from,
+                childIds: [], // 자식 ID는 아래에서 추가됨
+                isExpanded: true, // 붙여넣으면 펼쳐서 보여줌
+              };
+
+              // 슬롯에 부모 추가
+              // 여기서 바로 업데이트하지 않고, 아래 로직과 합쳐서 일괄 처리
+              targetParentId = newParentId;
+
+              // 부모 클론을 슬롯 아이템 목록에 추가할 준비 (임시)
+              slotItems.push(parentClone);
+            }
+          }
+        } else {
+          // 최상위 항목이면 parentId 없음
+          targetParentId = undefined;
+        }
 
         // 새 아이템 생성 (부모 연결)
         // subContent가 있으면 "원본: 세부내용" 형식으로 표시
@@ -1265,7 +1330,7 @@ export const usePlanStore = create<PlanStore>()(
           color: originalItem.color,
           category: originalItem.category,  // 루틴 카테고리 복사
           todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
-          parentId: originalItem.id,
+          parentId: targetParentId, // 슬롯 내의 부모 ID 연결 (없으면 undefined)
           originPeriodId: currentPeriodId,
           subContent: subContent,
           // 출처 정보 저장
@@ -1273,7 +1338,15 @@ export const usePlanStore = create<PlanStore>()(
           sourceType: from,
         };
 
-        // 부모에 자식 ID 추가
+        // 타겟 부모가 있으면 자식 목록 업데이트
+        if (targetParentId) {
+          const parentInSlot = slotItems.find(i => i.id === targetParentId);
+          if (parentInSlot) {
+            parentInSlot.childIds = [...(parentInSlot.childIds || []), newItem.id];
+          }
+        }
+
+        // 부모에 자식 ID 추가 (원본 쪽 업데이트 - 기존 로직 유지)
         const updatedOriginal: Item = {
           ...originalItem,
           childIds: [...(originalItem.childIds || []), newItem.id],
@@ -1307,24 +1380,28 @@ export const usePlanStore = create<PlanStore>()(
           }
         }
 
-        // 슬롯에 추가
-        const slotItems = period.slots[targetSlotId] || [];
+        // 슬롯에 추가 (이미 부모 클론이 push 되어 있을 수 있음)
         updatedPeriod.slots = {
           ...period.slots,
-          [targetSlotId]: [...slotItems, newItem],
+          [targetSlotId]: [...slotItems, newItem], // 부모(있으면) + 자식
         };
 
         // 하위 기간에도 할일로 추가 (전파!)
         const updatedPeriods = { ...freshState.periods, [currentPeriodId]: updatedPeriod };
 
         // 하위 기간 확보 및 할일 추가
+        // 주의: 하위 기간 전파 시에는 계층 구조를 단순화하거나, 부모도 같이 전파해야 함.
+        // 현재 로직은 '해당 아이템'만 전파. 계층 구조 복잡성을 피하기 위해 전파는 단일 아이템으로 유지하되,
+        // 필요하다면 추후 개선. 지금은 '슬롯 내 보여주기'가 우선.
         const childPeriod = freshState.periods[targetSlotId] || createEmptyPeriod(targetSlotId, LEVEL_CONFIG[currentLevel].childLevel!);
+
+        // 전파될 아이템
         const propagatedItem: Item = {
           ...newItem,
           id: genId(), // 새 ID
-          parentId: newItem.id, // 슬롯 아이템이 부모
-          category: originalItem.category,  // 루틴 카테고리 복사
-          todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
+          parentId: newItem.id, // 슬롯 아이템이 부모가 됨 (추적용)
+          category: originalItem.category,
+          todoCategory: originalItem.todoCategory,
         };
 
         // 슬롯 아이템에 전파된 아이템을 자식으로 추가 (체인 연결)
@@ -1333,13 +1410,10 @@ export const usePlanStore = create<PlanStore>()(
           childIds: [propagatedItem.id],
         };
 
-        // 슬롯의 아이템도 업데이트
-        updatedPeriod.slots = {
-          ...updatedPeriod.slots,
-          [targetSlotId]: updatedPeriod.slots[targetSlotId].map(item =>
-            item.id === newItem.id ? newItemWithChild : item
-          ),
-        };
+        // 슬롯의 아이템 업데이트 (newItem 교체)
+        updatedPeriod.slots[targetSlotId] = updatedPeriod.slots[targetSlotId].map(item =>
+          item.id === newItem.id ? newItemWithChild : item
+        );
         updatedPeriods[currentPeriodId] = updatedPeriod;
 
         updatedPeriods[targetSlotId] = {
@@ -1347,19 +1421,30 @@ export const usePlanStore = create<PlanStore>()(
           todos: [...childPeriod.todos, propagatedItem],
         };
 
+        // 상태 업데이트
+        // allItems에 새로 생성된 모든 아이템 추가 (부모 클론 포함)
+        const newAllItems = { ...freshState.allItems };
+
+        // 부모 클론이 생성되었으면 추가
+        if (parentId && targetParentId && targetParentId !== parentId) { // parentId가 변경되었다면 새 부모가 생긴 것
+          const parentInSlot = updatedPeriod.slots[targetSlotId].find(i => i.id === targetParentId);
+          if (parentInSlot) {
+            newAllItems[parentInSlot.id] = parentInSlot;
+          }
+        }
+
+        newAllItems[newItem.id] = newItemWithChild;
+        newAllItems[propagatedItem.id] = propagatedItem;
+        newAllItems[updatedOriginal.id] = updatedOriginal;
+
         set({
           periods: updatedPeriods,
-          allItems: {
-            ...freshState.allItems,
-            [newItem.id]: newItemWithChild,  // 자식 ID 포함된 버전 저장
-            [propagatedItem.id]: propagatedItem,
-            [updatedOriginal.id]: updatedOriginal,
-          },
+          allItems: newAllItems,
         });
       },
 
       // ═══════════════════════════════════════════════════════════
-      // 시간대 슬롯 배정 (일 뷰 전용)
+      // 시간대 슬롯 배정 (일 뷰 전용) - 계층 구조 유지 수정
       // ═══════════════════════════════════════════════════════════
       assignToTimeSlot: (itemId, from, timeSlot, subContent) => {
         const { currentPeriodId, currentLevel, ensurePeriod } = get();
@@ -1374,6 +1459,53 @@ export const usePlanStore = create<PlanStore>()(
         const sourceList = from === 'todo' ? period.todos : period.routines;
         const originalItem = sourceList.find((i) => i.id === itemId);
         if (!originalItem) return;
+
+        // 타겟 시간대 슬롯 아이템 목록 준비
+        const timeSlots = period.timeSlots || {
+          dawn: [], morning_early: [], morning_late: [], afternoon_early: [],
+          afternoon_late: [], evening_early: [], evening_late: [], anytime: []
+        };
+        const slotItems = [...(timeSlots[timeSlot] || [])];
+
+        // 원본 아이템이 하위 항목인지 확인
+        const parentId = originalItem.parentId;
+        let targetParentId = parentId;
+
+        if (parentId) {
+          const originalParent = sourceList.find(p => p.id === parentId);
+          if (originalParent) {
+            const existingParentInSlot = slotItems.find(
+              i => i.content === originalParent.content &&
+                i.category === originalParent.category &&
+                !i.parentId
+            );
+
+            if (existingParentInSlot) {
+              targetParentId = existingParentInSlot.id;
+            } else {
+              // 부모 클론 생성
+              const newParentId = genId();
+              const parentClone: Item = {
+                id: newParentId,
+                content: originalParent.content,
+                isCompleted: false,
+                color: originalParent.color,
+                category: originalParent.category,
+                todoCategory: originalParent.todoCategory,
+                originPeriodId: currentPeriodId,
+                sourceLevel: currentLevel,
+                sourceType: from,
+                childIds: [],
+                isExpanded: true,
+              };
+
+              targetParentId = newParentId;
+              slotItems.push(parentClone);
+            }
+          }
+        } else {
+          targetParentId = undefined;
+        }
 
         // subContent가 있으면 "원본: 세부내용" 형식으로 표시
         const displayContent = subContent
@@ -1392,11 +1524,19 @@ export const usePlanStore = create<PlanStore>()(
           // 출처 정보 (원본의 출처 유지 또는 현재 레벨)
           sourceLevel: originalItem.sourceLevel || currentLevel,
           sourceType: originalItem.sourceType || from,
-          parentId: originalItem.id,
+          parentId: targetParentId, // 슬롯 내 부모 연결
           originPeriodId: currentPeriodId,
         };
 
-        // 부모에 자식 ID 추가
+        // 타겟 부모가 있으면 자식 목록 업데이트
+        if (targetParentId) {
+          const parentInSlot = slotItems.find(i => i.id === targetParentId);
+          if (parentInSlot) {
+            parentInSlot.childIds = [...(parentInSlot.childIds || []), newItem.id];
+          }
+        }
+
+        // 부모에 자식 ID 추가 (원본)
         const updatedOriginal: Item = {
           ...originalItem,
           childIds: [...(originalItem.childIds || []), newItem.id],
@@ -1405,18 +1545,9 @@ export const usePlanStore = create<PlanStore>()(
         // 기간 업데이트
         const updatedPeriod = { ...period };
 
-        // timeSlots 초기화 (없을 경우)
+        // timeSlots 초기화 (없을 경우) - 위에서 이미 처리했지만 안전하게 재할당
         if (!updatedPeriod.timeSlots) {
-          updatedPeriod.timeSlots = {
-            dawn: [],
-            morning_early: [],
-            morning_late: [],
-            afternoon_early: [],
-            afternoon_late: [],
-            evening_early: [],
-            evening_late: [],
-            anytime: [],
-          };
+          updatedPeriod.timeSlots = timeSlots;
         }
 
         // 원본 리스트 업데이트
@@ -1444,19 +1575,26 @@ export const usePlanStore = create<PlanStore>()(
         }
 
         // 시간대 슬롯에 추가
-        const slotItems = updatedPeriod.timeSlots[timeSlot] || [];
         updatedPeriod.timeSlots = {
           ...updatedPeriod.timeSlots,
-          [timeSlot]: [...slotItems, newItem],
+          [timeSlot]: [...slotItems, newItem], // 부모(있으면) + 자식
         };
+
+        // 상태 업데이트
+        const newAllItems = { ...freshState.allItems };
+
+        // 부모 클론 추가 check
+        if (parentId && targetParentId && targetParentId !== parentId) {
+          const parentInSlot = slotItems.find(i => i.id === targetParentId);
+          if (parentInSlot) newAllItems[parentInSlot.id] = parentInSlot;
+        }
+
+        newAllItems[newItem.id] = newItem;
+        newAllItems[updatedOriginal.id] = updatedOriginal;
 
         set({
           periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
-          allItems: {
-            ...freshState.allItems,
-            [newItem.id]: newItem,
-            [updatedOriginal.id]: updatedOriginal,
-          },
+          allItems: newAllItems,
         });
       },
 
