@@ -13,6 +13,7 @@ import {
   useSensor,
   PointerSensor,
 } from '@dnd-kit/core';
+import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import {
   usePlanStore,
@@ -418,9 +419,8 @@ function DraggableItem({
 
         {/* 달성률 표시 (자식이 있는 항목) */}
         {hasChildren && progress !== undefined && (
-          <span className={`text-[10px] font-bold flex-shrink-0 ${
-            progress === 100 ? 'text-green-600' : 'text-blue-600'
-          }`}>{progress}%</span>
+          <span className={`text-[10px] font-bold flex-shrink-0 ${progress === 100 ? 'text-green-600' : 'text-blue-600'
+            }`}>{progress}%</span>
         )}
 
         {/* 루틴 카운트 */}
@@ -521,12 +521,18 @@ function CellDraggableItem({
   onToggle,
   onDelete,
   onOpenNote,
+  onToggleExpand,
+  depth = 0,
+  hasChildren = false,
 }: {
   item: Item;
   slotId: string;
   onToggle: () => void;
   onDelete: () => void;
   onOpenNote: () => void;
+  onToggleExpand?: () => void;
+  depth?: number;
+  hasChildren?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `cell-${slotId}-${item.id}`,
@@ -561,12 +567,29 @@ function CellDraggableItem({
         ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
         hover:shadow-sm hover:border-blue-300 transition-all
       `}
-      style={catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : undefined}
+      style={{
+        marginLeft: depth * 12,
+        ...(catConfig ? { borderLeftWidth: '3px', borderLeftColor: getCategoryBorderColor(item.category!) } : {})
+      }}
       onDoubleClick={(e) => {
         e.stopPropagation();
         onOpenNote();
       }}
     >
+      {/* 접기/펼치기 버튼 */}
+      {hasChildren && onToggleExpand && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleExpand();
+          }}
+          className="w-3 h-3 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-black/5 rounded flex-shrink-0 text-[8px]"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {item.isExpanded ? '▼' : '▶'}
+        </button>
+      )}
+
       <input
         type="checkbox"
         checked={item.isCompleted}
@@ -582,11 +605,10 @@ function CellDraggableItem({
       </span>
       {/* 출처 태그 */}
       {item.sourceLevel && (
-        <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
-          item.sourceType === 'routine'
-            ? 'bg-purple-100 text-purple-600'
-            : 'bg-blue-100 text-blue-600'
-        }`}>
+        <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${item.sourceType === 'routine'
+          ? 'bg-purple-100 text-purple-600'
+          : 'bg-blue-100 text-blue-600'
+          }`}>
           {SOURCE_TAG_PREFIX[item.sourceLevel]}
         </span>
       )}
@@ -739,9 +761,8 @@ function GridCell({
           <div className="flex items-center gap-2">
             <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all ${
-                  progress === 100 ? 'bg-green-500' : 'bg-blue-500'
-                }`}
+                className={`h-full rounded-full transition-all ${progress === 100 ? 'bg-green-500' : 'bg-blue-500'
+                  }`}
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -752,16 +773,40 @@ function GridCell({
 
       {/* 배정된 아이템들 */}
       <div className="flex-1 p-2 space-y-1.5 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        {items.map((item) => (
-          <CellDraggableItem
-            key={item.id}
-            item={item}
-            slotId={slotId}
-            onToggle={() => onToggleItem(item.id)}
-            onDelete={() => onDeleteItem(item.id)}
-            onOpenNote={() => setNoteModalItem(item)}
-          />
-        ))}
+        {(() => {
+          // 트리 구조 렌더링을 위한 처리
+          const itemMap = new Map(items.map(i => [i.id, i]));
+          // 부모가 없거나 이 셀에 부모가 없는 아이템을 루트로 간주
+          const rootItems = items.filter(i => !i.parentId || !itemMap.has(i.parentId));
+          const { toggleExpand } = usePlanStore.getState(); // 액션 직접 접근
+
+          const renderItem = (item: Item, depth: number) => {
+            const hasChildren = item.childIds?.some(id => itemMap.has(id));
+            const isExpanded = item.isExpanded ?? false;
+
+            return (
+              <React.Fragment key={item.id}>
+                <CellDraggableItem
+                  item={item}
+                  slotId={slotId}
+                  onToggle={() => onToggleItem(item.id)}
+                  onDelete={() => onDeleteItem(item.id)}
+                  onOpenNote={() => setNoteModalItem(item)}
+                  onToggleExpand={() => toggleExpand(item.id, 'slot', slotId)}
+                  depth={depth}
+                  hasChildren={!!hasChildren}
+                />
+                {isExpanded && hasChildren && item.childIds?.map(childId => {
+                  const child = itemMap.get(childId);
+                  if (child) return renderItem(child, depth + 1);
+                  return null;
+                })}
+              </React.Fragment>
+            );
+          };
+
+          return rootItems.map(item => renderItem(item, 0));
+        })()}
         {items.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs py-4">
             <span className="text-2xl mb-1">📥</span>
@@ -838,11 +883,10 @@ function TimeSlotDraggableItem({
       </span>
       {/* 출처 태그 */}
       {item.sourceLevel && (
-        <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${
-          item.sourceType === 'routine'
-            ? 'bg-purple-100 text-purple-600'
-            : 'bg-blue-100 text-blue-600'
-        }`}>
+        <span className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${item.sourceType === 'routine'
+          ? 'bg-purple-100 text-purple-600'
+          : 'bg-blue-100 text-blue-600'
+          }`}>
           {SOURCE_TAG_PREFIX[item.sourceLevel]}
         </span>
       )}
@@ -994,6 +1038,7 @@ function AddItemInput({
   placeholder: string;
 }) {
   const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -1007,11 +1052,13 @@ function AddItemInput({
       onAdd(value.trim());
     }
     setValue('');
+    setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   return (
     <form onSubmit={handleSubmit} className="w-full">
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -1345,11 +1392,10 @@ export default function FractalView() {
                       }
                       usePlanStore.getState().navigateTo(targetId);
                     }}
-                    className={`px-2 py-0.5 text-xs rounded-md transition-colors ${
-                      currentLevel === level
-                        ? 'bg-blue-100 text-blue-700 font-medium'
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                    }`}
+                    className={`px-2 py-0.5 text-xs rounded-md transition-colors ${currentLevel === level
+                      ? 'bg-blue-100 text-blue-700 font-medium'
+                      : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                      }`}
                   >
                     {LEVEL_CONFIG[level].label}
                   </button>
@@ -1422,9 +1468,8 @@ export default function FractalView() {
               ) : (
                 <span
                   onClick={() => setEditingField('goal')}
-                  className={`flex-1 min-w-0 truncate cursor-pointer text-sm px-1 py-0.5 rounded hover:bg-blue-50 ${
-                    period.goal ? 'text-slate-700 font-medium' : 'text-slate-400'
-                  }`}
+                  className={`flex-1 min-w-0 truncate cursor-pointer text-sm px-1 py-0.5 rounded hover:bg-blue-50 ${period.goal ? 'text-slate-700 font-medium' : 'text-slate-400'
+                    }`}
                 >
                   {period.goal || '목표 입력...'}
                 </span>
@@ -1448,9 +1493,8 @@ export default function FractalView() {
               ) : (
                 <span
                   onClick={() => setEditingField('motto')}
-                  className={`flex-1 min-w-0 truncate cursor-pointer text-sm px-1 py-0.5 rounded hover:bg-green-50 ${
-                    period.motto ? 'text-slate-700 font-medium' : 'text-slate-400'
-                  }`}
+                  className={`flex-1 min-w-0 truncate cursor-pointer text-sm px-1 py-0.5 rounded hover:bg-green-50 ${period.motto ? 'text-slate-700 font-medium' : 'text-slate-400'
+                    }`}
                 >
                   {period.motto || '다짐 입력...'}
                 </span>
@@ -1458,16 +1502,24 @@ export default function FractalView() {
             </div>
 
             {/* 계획/기록 토글 (태블릿 이상만) */}
-            <div className="hidden lg:flex bg-slate-200 rounded-md p-0.5 flex-shrink-0">
-              <button className="px-3 py-1 rounded text-xs font-medium bg-blue-600 text-white">
-                계획
-              </button>
-              <button
-                onClick={() => usePlanStore.getState().toggleViewMode()}
-                className="px-3 py-1 rounded text-xs font-medium text-slate-600 hover:bg-slate-100"
-              >
-                기록
-              </button>
+            <div className="hidden lg:flex items-center gap-2">
+              <div className="bg-slate-200 rounded-md p-0.5 flex-shrink-0">
+                <button className="px-3 py-1 rounded text-xs font-medium bg-blue-600 text-white">
+                  계획
+                </button>
+                <button
+                  onClick={() => usePlanStore.getState().toggleViewMode()}
+                  className="px-3 py-1 rounded text-xs font-medium text-slate-600 hover:bg-slate-100"
+                >
+                  기록
+                </button>
+              </div>
+              <Link href="/notepad">
+                <span className="px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 border border-gray-200 transition-colors flex items-center gap-1">
+                  <span>📝</span>
+                  메모장
+                </span>
+              </Link>
             </div>
           </div>
 
@@ -1491,11 +1543,11 @@ export default function FractalView() {
               return (
                 <span
                   key={memo.id}
-                  className={`group inline-flex items-center gap-1 px-2 py-0.5 border rounded-full text-xs ${colorClass} ${!isCurrentPeriod ? 'opacity-70' : ''}`}
+                  className={`group inline-flex items-center gap-1 px-2 py-0.5 border rounded-full text-xs ${colorClass} ${!isCurrentPeriod ? 'opacity-90 ring-1 ring-inset ring-black/5' : ''}`}
                 >
                   {/* 출처 레벨 태그 (현재 기간이 아닌 경우만) */}
                   {!isCurrentPeriod && (
-                    <span className="text-[10px] font-semibold opacity-60">
+                    <span className="text-[10px] font-bold px-1 rounded-sm bg-black/5 mr-0.5">
                       {SOURCE_TAG_PREFIX[memo.sourceLevel]}
                     </span>
                   )}
@@ -1775,33 +1827,30 @@ export default function FractalView() {
           <nav className="flex h-full">
             <button
               onClick={() => setMobileTab('todo')}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-                mobileTab === 'todo'
-                  ? 'text-blue-600 bg-blue-50'
-                  : 'text-slate-500 hover:bg-slate-50'
-              }`}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${mobileTab === 'todo'
+                ? 'text-blue-600 bg-blue-50'
+                : 'text-slate-500 hover:bg-slate-50'
+                }`}
             >
               <span className="text-lg">✓</span>
               <span className="text-[10px] font-medium">할일</span>
             </button>
             <button
               onClick={() => setMobileTab('grid')}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-                mobileTab === 'grid'
-                  ? 'text-blue-600 bg-blue-50'
-                  : 'text-slate-500 hover:bg-slate-50'
-              }`}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${mobileTab === 'grid'
+                ? 'text-blue-600 bg-blue-50'
+                : 'text-slate-500 hover:bg-slate-50'
+                }`}
             >
               <span className="text-lg">📅</span>
               <span className="text-[10px] font-medium">일정</span>
             </button>
             <button
               onClick={() => setMobileTab('routine')}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-                mobileTab === 'routine'
-                  ? 'text-purple-600 bg-purple-50'
-                  : 'text-slate-500 hover:bg-slate-50'
-              }`}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${mobileTab === 'routine'
+                ? 'text-purple-600 bg-purple-50'
+                : 'text-slate-500 hover:bg-slate-50'
+                }`}
             >
               <span className="text-lg">↻</span>
               <span className="text-[10px] font-medium">루틴</span>

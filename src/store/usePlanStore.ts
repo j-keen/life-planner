@@ -650,7 +650,7 @@ interface PlanStore {
   addSubItem: (parentId: string, content: string, location: 'todo' | 'routine') => void;
 
   // 접기/펼치기 토글
-  toggleExpand: (itemId: string, location: 'todo' | 'routine') => void;
+  toggleExpand: (itemId: string, location: 'todo' | 'routine' | 'slot' | 'timeslot', slotId?: string) => void;
 
   // 완료 토글
   toggleComplete: (itemId: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
@@ -1629,7 +1629,7 @@ export const usePlanStore = create<PlanStore>()(
       // ═══════════════════════════════════════════════════════════
       // 접기/펼치기 토글
       // ═══════════════════════════════════════════════════════════
-      toggleExpand: (itemId, location) => {
+      toggleExpand: (itemId, location, slotId) => {
         const state = get();
         const period = state.periods[state.currentPeriodId];
         if (!period) return;
@@ -1638,10 +1638,24 @@ export const usePlanStore = create<PlanStore>()(
           item.id === itemId ? { ...item, isExpanded: !item.isExpanded } : item;
 
         const updatedPeriod = { ...period };
+
         if (location === 'todo') {
           updatedPeriod.todos = period.todos.map(toggler);
-        } else {
+        } else if (location === 'routine') {
           updatedPeriod.routines = period.routines.map(toggler);
+        } else if (location === 'slot' && slotId) {
+          const slotItems = period.slots[slotId] || [];
+          updatedPeriod.slots = {
+            ...period.slots,
+            [slotId]: slotItems.map(toggler)
+          };
+        } else if (location === 'timeslot' && slotId && period.timeSlots) {
+          const tsId = slotId as import('../types/plan').TimeSlot;
+          const tsItems = period.timeSlots?.[tsId] || [];
+          updatedPeriod.timeSlots = {
+            ...period.timeSlots,
+            [tsId]: tsItems.map(toggler)
+          };
         }
 
         set({
@@ -1889,14 +1903,14 @@ export const usePlanStore = create<PlanStore>()(
         const updated: DailyRecord = existing
           ? { ...existing, content, updatedAt: now }
           : {
-              id: genId(),
-              periodId,
-              content,
-              highlights: [],
-              gratitude: [],
-              createdAt: now,
-              updatedAt: now,
-            };
+            id: genId(),
+            periodId,
+            content,
+            highlights: [],
+            gratitude: [],
+            createdAt: now,
+            updatedAt: now,
+          };
 
         set({
           records: { ...state.records, [periodId]: updated },
@@ -1911,15 +1925,15 @@ export const usePlanStore = create<PlanStore>()(
         const updated: DailyRecord = existing
           ? { ...existing, mood, updatedAt: now }
           : {
-              id: genId(),
-              periodId,
-              content: '',
-              mood,
-              highlights: [],
-              gratitude: [],
-              createdAt: now,
-              updatedAt: now,
-            };
+            id: genId(),
+            periodId,
+            content: '',
+            mood,
+            highlights: [],
+            gratitude: [],
+            createdAt: now,
+            updatedAt: now,
+          };
 
         set({
           records: { ...state.records, [periodId]: updated },
@@ -1934,14 +1948,14 @@ export const usePlanStore = create<PlanStore>()(
         const updated: DailyRecord = existing
           ? { ...existing, highlights: [...existing.highlights, text], updatedAt: now }
           : {
-              id: genId(),
-              periodId,
-              content: '',
-              highlights: [text],
-              gratitude: [],
-              createdAt: now,
-              updatedAt: now,
-            };
+            id: genId(),
+            periodId,
+            content: '',
+            highlights: [text],
+            gratitude: [],
+            createdAt: now,
+            updatedAt: now,
+          };
 
         set({
           records: { ...state.records, [periodId]: updated },
@@ -1976,14 +1990,14 @@ export const usePlanStore = create<PlanStore>()(
         const updated: DailyRecord = existing
           ? { ...existing, gratitude: [...existing.gratitude, text], updatedAt: now }
           : {
-              id: genId(),
-              periodId,
-              content: '',
-              highlights: [],
-              gratitude: [text],
-              createdAt: now,
-              updatedAt: now,
-            };
+            id: genId(),
+            periodId,
+            content: '',
+            highlights: [],
+            gratitude: [text],
+            createdAt: now,
+            updatedAt: now,
+          };
 
         set({
           records: { ...state.records, [periodId]: updated },

@@ -5,6 +5,114 @@ import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { usePlanStore } from '@/store/usePlanStore';
 import { AnnualEvent, AnnualEventType, ANNUAL_EVENT_TYPES, ANNUAL_EVENT_TYPE_CONFIG } from '@/types/plan';
+import { exportToCSV, importFromCSV } from '@/lib/csvUtils';
+
+// CSV 컨트롤 컴포넌트
+function EventCsvControls({ onImportSuccess }: { onImportSuccess: () => void }) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const { annualEvents, addAnnualEvent } = usePlanStore();
+
+  const handleExport = () => {
+    if (annualEvents.length === 0) {
+      alert('내보낼 기념일이 없습니다.');
+      return;
+    }
+
+    const data = annualEvents.map(e => ({
+      title: e.title,
+      type: e.type,
+      month: e.month,
+      day: e.day,
+      lunar: e.lunarDate ? 'Y' : 'N',
+      note: e.note || ''
+    }));
+
+    exportToCSV(
+      data,
+      `events_${new Date().toISOString().split('T')[0]}.csv`,
+      ['title', 'type', 'month', 'day', 'lunar', 'note']
+    );
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const result = await importFromCSV(file, (row) => {
+        // 유효성 검사
+        if (!row.title || !row.type || !row.month || !row.day) {
+          return { valid: false, error: 'Title, Type, Month, Day are required' };
+        }
+        if (!ANNUAL_EVENT_TYPES.includes(row.type)) {
+          return { valid: false, error: `Invalid type: ${row.type}` };
+        }
+        return {
+          valid: true,
+          data: {
+            title: row.title,
+            type: row.type as AnnualEventType,
+            month: parseInt(row.month),
+            day: parseInt(row.day),
+            lunarDate: row.lunar === 'Y' || row.lunar === 'true',
+            note: row.note
+          }
+        };
+      });
+
+      if (result.success.length > 0) {
+        let addedCount = 0;
+        result.success.forEach(item => {
+          addAnnualEvent({
+            title: item.title,
+            type: item.type,
+            month: item.month,
+            day: item.day,
+            lunarDate: item.lunarDate,
+            note: item.note
+          });
+          addedCount++;
+        });
+
+        alert(`${addedCount}개 기념일 가져오기 성공! (${result.errors.length}개 건너뜀)`);
+        if (result.errors.length > 0) console.warn(result.errors);
+        onImportSuccess();
+      }
+    } catch (error) {
+      alert('CSV 불러오기 실패');
+      console.error(error);
+    }
+
+    // input 초기화
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  return (
+    <div className="flex items-center gap-2 ml-2">
+      <button
+        onClick={handleExport}
+        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+        title="CSV 내보내기"
+      >
+        📤
+      </button>
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded"
+        title="CSV 불러오기"
+      >
+        📥
+      </button>
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".csv"
+        className="hidden"
+        onChange={handleImport}
+      />
+    </div>
+  );
+}
 
 export default function EventsPage() {
   const { annualEvents, addAnnualEvent, updateAnnualEvent, deleteAnnualEvent, getUpcomingEvents } = usePlanStore();
@@ -111,6 +219,7 @@ export default function EventsPage() {
             ))}
           </select>
 
+
           {/* 기념일 추가 버튼 */}
           <button
             onClick={() => setShowAddForm(true)}
@@ -118,6 +227,9 @@ export default function EventsPage() {
           >
             + 기념일 추가
           </button>
+
+          {/* CSV 관리 */}
+          <EventCsvControls onImportSuccess={() => window.location.reload()} />
         </div>
       </header>
 
@@ -371,12 +483,11 @@ function EventRow({
 
           <div className="flex items-center gap-4">
             {/* D-day */}
-            <div className={`px-3 py-1 rounded-full text-sm font-bold ${
-              dday === 0 ? 'bg-red-500 text-white' :
+            <div className={`px-3 py-1 rounded-full text-sm font-bold ${dday === 0 ? 'bg-red-500 text-white' :
               dday <= 7 ? 'bg-pink-100 text-pink-700' :
-              dday <= 30 ? 'bg-amber-100 text-amber-700' :
-              'bg-gray-100 text-gray-600'
-            }`}>
+                dday <= 30 ? 'bg-amber-100 text-amber-700' :
+                  'bg-gray-100 text-gray-600'
+              }`}>
               {dday === 0 ? '오늘!' : `D-${dday}`}
             </div>
 
@@ -583,11 +694,10 @@ function AddEventForm({
                   <button
                     key={t}
                     onClick={() => setType(t)}
-                    className={`flex flex-col items-center p-2 rounded-lg text-sm font-medium transition-colors border-2 ${
-                      type === t
-                        ? 'border-pink-500 bg-pink-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                    className={`flex flex-col items-center p-2 rounded-lg text-sm font-medium transition-colors border-2 ${type === t
+                      ? 'border-pink-500 bg-pink-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                      }`}
                   >
                     <span className="text-xl">{config.icon}</span>
                     <span className="text-xs mt-1">{config.label}</span>
