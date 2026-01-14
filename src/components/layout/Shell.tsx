@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useAutoSync } from '@/hooks/useAutoSync';
 import { ChatAssistant } from '@/components/ChatAssistant';
 import { CloudSync } from '@/components/CloudSync';
 import { SearchModal } from '@/components/SearchModal';
@@ -16,6 +17,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
   const { baseYear, setBaseYear } = usePlanStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+
+  // 자동 클라우드 동기화
+  useAutoSync();
 
   // API 키 관련 상태
   const [apiKey, setApiKey] = useState('');

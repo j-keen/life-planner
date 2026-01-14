@@ -668,6 +668,12 @@ interface PlanStore {
   resetRoutinesIfNeeded: (periodId: string) => void;
 
   // ═══════════════════════════════════════════════════════════════
+  // 클라우드 동기화용 직접 setter
+  // ═══════════════════════════════════════════════════════════════
+  setPeriods: (periods: Record<string, Period>) => void;
+  setRecords: (records: Record<string, DailyRecord>) => void;
+
+  // ═══════════════════════════════════════════════════════════════
   // 기록 (Record) 관련
   // ═══════════════════════════════════════════════════════════════
   getRecord: (periodId: string) => DailyRecord | null;
@@ -2023,6 +2029,17 @@ export const usePlanStore = create<PlanStore>()(
             },
           });
         }
+      },
+
+      // ═══════════════════════════════════════════════════════════
+      // 클라우드 동기화용 직접 setter
+      // ═══════════════════════════════════════════════════════════
+      setPeriods: (periods: Record<string, Period>) => {
+        set({ periods });
+      },
+
+      setRecords: (records: Record<string, DailyRecord>) => {
+        set({ records });
       },
 
       // ═══════════════════════════════════════════════════════════
