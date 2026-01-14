@@ -465,6 +465,23 @@ function DraggableItem({
   const [showSubInput, setShowSubInput] = useState(false);
   const [subContent, setSubContent] = useState('');
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const subInputRef = useRef<HTMLDivElement>(null);
+
+  // 외부 클릭 감지: 하위 항목 입력창 닫기
+  useEffect(() => {
+    if (!showSubInput) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (subInputRef.current && !subInputRef.current.contains(e.target as Node)) {
+        setShowSubInput(false);
+        setSubContent('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSubInput]);
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${from}-${item.id}`,
     data: { item, from },
@@ -642,6 +659,7 @@ function DraggableItem({
       {/* 하위 항목 추가 입력 */}
       {showSubInput && (
         <div
+          ref={subInputRef}
           className="flex items-center gap-2 mt-1 p-2 bg-gray-50 rounded-lg border border-dashed border-gray-300"
           style={{ marginLeft: (depth + 1) * 20 }}
         >

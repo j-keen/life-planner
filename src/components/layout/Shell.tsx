@@ -74,7 +74,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-50 text-gray-800">
       {/* Header / Nav */}
       <header className="h-12 border-b border-gray-200 bg-white px-4 flex items-center justify-between">
-        <h1 className="font-bold text-lg text-gray-900">Life Planner</h1>
+        <Link href="/" className="font-bold text-lg text-gray-900 hover:text-blue-600 transition-colors">
+          Life Planner
+        </Link>
 
         <div className="flex items-center gap-4">
           {/* 검색 버튼 */}
@@ -104,12 +106,12 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
           {/* 클라우드 동기화 */}
           <CloudSync />
 
-          {/* 대시보드 링크 */}
+          {/* 계획표 링크 */}
           <Link
-            href="/dashboard"
+            href="/planner"
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
           >
-            📊 대시보드
+            📋 계획표
           </Link>
 
           {/* 루틴 관리 링크 */}
