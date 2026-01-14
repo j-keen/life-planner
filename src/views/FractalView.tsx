@@ -12,6 +12,7 @@ import {
   useSensors,
   useSensor,
   PointerSensor,
+  TouchSensor,
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
@@ -228,6 +229,144 @@ function NoteModal({
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 모바일 배정 모달 (롱프레스용)
+// ═══════════════════════════════════════════════════════════════
+function AssignModal({
+  item,
+  from,
+  currentLevel,
+  childPeriodIds,
+  baseYear,
+  onAssignToSlot,
+  onAssignToTimeSlot,
+  onClose,
+}: {
+  item: Item;
+  from: 'todo' | 'routine';
+  currentLevel: string;
+  childPeriodIds: string[];
+  baseYear: number;
+  onAssignToSlot: (itemId: string, from: 'todo' | 'routine', slotId: string) => void;
+  onAssignToTimeSlot: (itemId: string, from: 'todo' | 'routine', timeSlot: TimeSlot) => void;
+  onClose: () => void;
+}) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  const handleAssign = (slotId: string) => {
+    if (currentLevel === 'DAY') {
+      const timeSlot = slotId as TimeSlot;
+      onAssignToTimeSlot(item.id, from, timeSlot);
+    } else {
+      onAssignToSlot(item.id, from, slotId);
+    }
+    onClose();
+  };
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-sm"
+      onClick={handleBackdropClick}
+    >
+      <div
+        ref={modalRef}
+        className="bg-white rounded-t-2xl shadow-2xl w-full max-w-md mx-0 overflow-hidden animate-in slide-in-from-bottom duration-300 max-h-[70vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 모달 헤더 */}
+        <div className="flex items-center justify-between px-4 py-3 bg-blue-50 border-b border-blue-200">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-600">📍</span>
+            <span className="font-semibold text-slate-700 truncate max-w-[200px]">{item.content}</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-blue-200 text-slate-500 hover:text-slate-700 transition-colors"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* 슬롯 선택 영역 */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <p className="text-xs text-slate-500 mb-3">배정할 위치를 선택하세요</p>
+
+          {currentLevel === 'DAY' ? (
+            <div className="grid grid-cols-2 gap-2">
+              {TIME_SLOTS.map((timeSlot) => {
+                const config = TIME_SLOT_CONFIG[timeSlot];
+                return (
+                  <button
+                    key={timeSlot}
+                    onClick={() => handleAssign(timeSlot)}
+                    className="p-3 rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
+                  >
+                    <div className="font-medium text-sm text-slate-700">{config.label}</div>
+                    {config.timeRange && (
+                      <div className="text-xs text-slate-500">{config.timeRange}</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {childPeriodIds.map((childId) => {
+                const date = parseDayPeriodId(childId);
+                const dayInfo = date ? isHolidayOrWeekend(date) : null;
+
+                let textColorClass = 'text-slate-700';
+                if (dayInfo?.isHoliday || dayInfo?.isSunday) textColorClass = 'text-red-600';
+                else if (dayInfo?.isSaturday) textColorClass = 'text-blue-600';
+
+                return (
+                  <button
+                    key={childId}
+                    onClick={() => handleAssign(childId)}
+                    className="p-3 rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
+                  >
+                    <div className={`font-medium text-sm ${textColorClass}`}>
+                      {getSlotLabel(childId, baseYear)}
+                    </div>
+                    {dayInfo?.holidayName && (
+                      <div className="text-xs text-red-500">{dayInfo.holidayName}</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 취소 버튼 */}
+        <div className="p-4 border-t border-slate-200 bg-slate-50">
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 text-sm text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors font-medium"
+          >
+            취소
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 편집 가능한 텍스트
 // ═══════════════════════════════════════════════════════════════
 function EditableText({
@@ -304,6 +443,7 @@ function DraggableItem({
   onContentChange,
   onAddSubItem,
   onToggleExpand,
+  onLongPress,
   progress,
   depth = 0,
   isHidden = false,
@@ -316,6 +456,7 @@ function DraggableItem({
   onContentChange: (content: string) => void;
   onAddSubItem: (content: string) => void;
   onToggleExpand: () => void;
+  onLongPress?: () => void;
   progress?: number;
   depth?: number;
   isHidden?: boolean;
@@ -323,10 +464,35 @@ function DraggableItem({
   const [showColorMenu, setShowColorMenu] = useState(false);
   const [showSubInput, setShowSubInput] = useState(false);
   const [subContent, setSubContent] = useState('');
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${from}-${item.id}`,
     data: { item, from },
   });
+
+  // 롱프레스 핸들러
+  const handleTouchStart = () => {
+    if (onLongPress) {
+      longPressTimer.current = setTimeout(() => {
+        onLongPress();
+        if (navigator.vibrate) navigator.vibrate(50);
+      }, 500);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
 
   const showCount = from === 'routine' && item.targetCount;
   const remaining = item.currentCount ?? item.targetCount ?? 0;
@@ -389,6 +555,9 @@ function DraggableItem({
           e.preventDefault();
           setShowColorMenu(true);
         }}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchMove={handleTouchMove}
       >
         {/* 접기/펼치기 버튼 (자식이 있을 때만) */}
         {hasChildren && (
@@ -1111,6 +1280,7 @@ export default function FractalView() {
   const [memoInput, setMemoInput] = useState('');
   const [mobileTab, setMobileTab] = useState<'todo' | 'grid' | 'routine'>('grid');
   const [isMobile, setIsMobile] = useState(false);
+  const [assignModalItem, setAssignModalItem] = useState<{ item: Item; from: 'todo' | 'routine' } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -1122,7 +1292,8 @@ export default function FractalView() {
   }, []);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
   );
 
   // 현재 기간 확보
@@ -1661,6 +1832,7 @@ export default function FractalView() {
                           onContentChange={(content) => updateItemContent(item.id, content, 'todo')}
                           onAddSubItem={(content) => addSubItem(item.id, content, 'todo')}
                           onToggleExpand={() => toggleExpand(item.id, 'todo')}
+                          onLongPress={() => setAssignModalItem({ item, from: 'todo' })}
                           progress={getProgress(item.id)}
                           depth={getDepth(item)}
                           isHidden={isHidden(item)}
@@ -1802,6 +1974,7 @@ export default function FractalView() {
                           onContentChange={(content) => updateItemContent(item.id, content, 'routine')}
                           onAddSubItem={(content) => addSubItem(item.id, content, 'routine')}
                           onToggleExpand={() => toggleExpand(item.id, 'routine')}
+                          onLongPress={() => setAssignModalItem({ item, from: 'routine' })}
                           progress={getProgress(item.id)}
                           depth={getDepth(item)}
                           isHidden={isHidden(item)}
@@ -1875,6 +2048,20 @@ export default function FractalView() {
           )}
         </DragOverlay>,
         document.body
+      )}
+
+      {/* 모바일 배정 모달 (롱프레스) */}
+      {assignModalItem && (
+        <AssignModal
+          item={assignModalItem.item}
+          from={assignModalItem.from}
+          currentLevel={currentLevel}
+          childPeriodIds={childPeriodIds}
+          baseYear={baseYear}
+          onAssignToSlot={assignToSlot}
+          onAssignToTimeSlot={assignToTimeSlot}
+          onClose={() => setAssignModalItem(null)}
+        />
       )}
 
     </DndContext>
