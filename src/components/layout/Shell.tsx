@@ -104,6 +104,14 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
           {/* 클라우드 동기화 */}
           <CloudSync />
 
+          {/* 대시보드 링크 */}
+          <Link
+            href="/dashboard"
+            className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+          >
+            📊 대시보드
+          </Link>
+
           {/* 루틴 관리 링크 */}
           <Link
             href="/routines"

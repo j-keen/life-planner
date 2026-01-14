@@ -531,7 +531,7 @@ function DraggableItem({
     if (subContent.trim()) {
       onAddSubItem(subContent.trim());
       setSubContent('');
-      setShowSubInput(false);
+      // 입력창 유지 - Escape로 닫기
     }
   };
 
@@ -586,8 +586,8 @@ function DraggableItem({
           <EditableText value={item.content} onSave={onContentChange} className="truncate" />
         </div>
 
-        {/* 달성률 표시 (자식이 있는 항목) */}
-        {hasChildren && progress !== undefined && (
+        {/* 달성률 표시 (최상위 항목만, 하위 항목은 체크만) */}
+        {hasChildren && progress !== undefined && !item.parentId && (
           <span className={`text-[10px] font-bold flex-shrink-0 ${progress === 100 ? 'text-green-600' : 'text-blue-600'
             }`}>{progress}%</span>
         )}

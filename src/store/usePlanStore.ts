@@ -1532,7 +1532,34 @@ export const usePlanStore = create<PlanStore>()(
           sourceType: originalItem.sourceType || from,
           parentId: targetParentId, // 슬롯 내 부모 연결
           originPeriodId: currentPeriodId,
+          childIds: [], // 하위 항목 복사용
+          isExpanded: true, // 기본 펼침
         };
+
+        // 원본이 부모(자식이 있는 경우) → 자식들도 함께 복사
+        const childClones: Item[] = [];
+        if (originalItem.childIds && originalItem.childIds.length > 0 && !parentId) {
+          // 원본 자식들 찾아서 복사
+          for (const childId of originalItem.childIds) {
+            const originalChild = sourceList.find(i => i.id === childId);
+            if (originalChild) {
+              const childClone: Item = {
+                id: genId(),
+                content: originalChild.content,
+                isCompleted: false,
+                color: originalChild.color,
+                category: originalChild.category,
+                todoCategory: originalChild.todoCategory,
+                sourceLevel: originalChild.sourceLevel || currentLevel,
+                sourceType: originalChild.sourceType || from,
+                parentId: newItem.id, // 새 부모에 연결
+                originPeriodId: currentPeriodId,
+              };
+              childClones.push(childClone);
+              newItem.childIds!.push(childClone.id);
+            }
+          }
+        }
 
         // 타겟 부모가 있으면 자식 목록 업데이트
         if (targetParentId) {
@@ -1542,7 +1569,7 @@ export const usePlanStore = create<PlanStore>()(
           }
         }
 
-        // 부모에 자식 ID 추가 (원본)
+        // 부모에 자식 ID 추가 (원본) - 자식 클론 ID는 추가하지 않음 (별도 추적)
         const updatedOriginal: Item = {
           ...originalItem,
           childIds: [...(originalItem.childIds || []), newItem.id],
@@ -1580,10 +1607,10 @@ export const usePlanStore = create<PlanStore>()(
           }
         }
 
-        // 시간대 슬롯에 추가
+        // 시간대 슬롯에 추가 (부모 + 자식 클론들 포함)
         updatedPeriod.timeSlots = {
           ...updatedPeriod.timeSlots,
-          [timeSlot]: [...slotItems, newItem], // 부모(있으면) + 자식
+          [timeSlot]: [...slotItems, newItem, ...childClones],
         };
 
         // 상태 업데이트
@@ -1597,6 +1624,11 @@ export const usePlanStore = create<PlanStore>()(
 
         newAllItems[newItem.id] = newItem;
         newAllItems[updatedOriginal.id] = updatedOriginal;
+
+        // 자식 클론들도 allItems에 추가
+        for (const childClone of childClones) {
+          newAllItems[childClone.id] = childClone;
+        }
 
         set({
           periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
