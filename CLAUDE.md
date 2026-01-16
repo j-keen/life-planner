@@ -60,6 +60,7 @@ Core concept: fractal drill-down structure for planning across time scales.
 ### Period ID System
 
 Period IDs defined in `usePlanStore.ts` (functions: `getPeriodId`, `parsePeriodId`):
+
 - `30y` - 30-year period
 - `5y-{0-5}` - 5-year segment index
 - `y-{year}` - Year (e.g., `y-2025`)
@@ -78,6 +79,7 @@ Period IDs defined in `usePlanStore.ts` (functions: `getPeriodId`, `parsePeriodI
 ### State Management (src/store/usePlanStore.ts)
 
 Zustand store with localStorage persistence (`life-planner-storage`). Key actions:
+
 - `navigateTo(periodId)` - Navigate to specific period
 - `drillDown(childPeriodId)` / `drillUp()` - Hierarchy navigation
 - `addItem(content, 'todo'|'routine', targetCount?, category?)` - Add items
@@ -89,6 +91,7 @@ Zustand store with localStorage persistence (`life-planner-storage`). Key action
 ### Core UI (src/views/FractalView.tsx)
 
 Three-column layout:
+
 - **Left panel**: Todos organized by 6 categories
 - **Center**: Grid of child periods (droppable) or time slots (DAY level)
 - **Right panel**: Routines organized by 6 categories
@@ -98,6 +101,7 @@ Drag-and-drop: Items dragged from side panels to center grid cells. Uses @dnd-ki
 ### Category System
 
 6 categories with color coding:
+
 - `work` - 업무/학습 (blue)
 - `health` - 건강/운동 (green)
 - `relationship` - 관계/소통 (rose)
@@ -141,5 +145,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 ## Development Status
 
 Based on task.md, remaining work:
+
 - CRUD operations (create/edit/delete items modal)
 - Polish: glassmorphism styling, transitions, micro-animations

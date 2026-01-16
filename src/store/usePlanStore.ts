@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { Level, Item, Period, LEVEL_CONFIG, LEVELS, TimeSlot, TIME_SLOTS, Category, TodoCategory, DailyRecord, Mood, AnnualEvent, AnnualEventType, Memo } from '../types/plan';
 
 // ═══════════════════════════════════════════════════════════════
@@ -650,7 +649,7 @@ interface PlanStore {
   addSubItem: (parentId: string, content: string, location: 'todo' | 'routine') => void;
 
   // 접기/펼치기 토글
-  toggleExpand: (itemId: string, location: 'todo' | 'routine' | 'slot' | 'timeslot', slotId?: string) => void;
+  toggleExpand: (itemId: string, location: 'todo' | 'routine') => void;
 
   // 완료 토글
   toggleComplete: (itemId: string, location: 'todo' | 'routine' | 'slot', slotId?: string) => void;
@@ -666,12 +665,6 @@ interface PlanStore {
 
   // 루틴 자동 리셋 (새 기간 진입 시)
   resetRoutinesIfNeeded: (periodId: string) => void;
-
-  // ═══════════════════════════════════════════════════════════════
-  // 클라우드 동기화용 직접 setter
-  // ═══════════════════════════════════════════════════════════════
-  setPeriods: (periods: Record<string, Period>) => void;
-  setRecords: (records: Record<string, DailyRecord>) => void;
 
   // ═══════════════════════════════════════════════════════════════
   // 기록 (Record) 관련
@@ -703,1572 +696,1444 @@ const initialWeekNum = getISOWeek(now);
 const initialWeekYear = getISOWeekYear(now);
 
 export const usePlanStore = create<PlanStore>()(
-  persist(
-    (set, get) => ({
-      currentLevel: 'WEEK',
-      currentPeriodId: `w-${initialWeekYear}-${String(initialWeekNum).padStart(2, '0')}`,
-      baseYear: currentYear,
-      periods: {},
-      allItems: {},
-      records: {},
-      viewMode: 'plan' as const,
-      annualEvents: [],
+  (set, get) => ({
+    currentLevel: 'WEEK',
+    currentPeriodId: `w-${initialWeekYear}-${String(initialWeekNum).padStart(2, '0')}`,
+    baseYear: currentYear,
+    periods: {},
+    allItems: {},
+    records: {},
+    viewMode: 'plan' as const,
+    annualEvents: [],
 
-      setBaseYear: (year) => {
-        set({ baseYear: year });
-      },
+    setBaseYear: (year) => {
+      set({ baseYear: year });
+    },
 
-      navigateTo: (periodId) => {
-        const parsed = parsePeriodId(periodId);
-        const state = get();
+    navigateTo: (periodId) => {
+      const parsed = parsePeriodId(periodId);
+      const state = get();
 
-        // 기간이 없으면 생성
-        if (!state.periods[periodId]) {
-          set({
-            periods: {
-              ...state.periods,
-              [periodId]: createEmptyPeriod(periodId, parsed.level),
-            },
-          });
-        }
-
-        set({
-          currentLevel: parsed.level,
-          currentPeriodId: periodId,
-        });
-
-        // 루틴 자동 리셋 체크
-        get().resetRoutinesIfNeeded(periodId);
-      },
-
-      drillDown: (childPeriodId) => {
-        get().navigateTo(childPeriodId);
-      },
-
-      drillUp: () => {
-        const state = get();
-        const parentId = getParentPeriodId(state.currentPeriodId, state.baseYear);
-        if (parentId) {
-          get().navigateTo(parentId);
-        }
-      },
-
-      setViewMode: (mode) => {
-        set({ viewMode: mode });
-      },
-
-      toggleViewMode: () => {
-        const state = get();
-        set({ viewMode: state.viewMode === 'plan' ? 'record' : 'plan' });
-      },
-
-      updatePeriodHeader: (field, value) => {
-        const { currentPeriodId, ensurePeriod } = get();
-        const period = ensurePeriod(currentPeriodId);
-
-        // ensurePeriod 후 fresh state 사용
-        const freshState = get();
-
-        set({
-          periods: {
-            ...freshState.periods,
-            [currentPeriodId]: { ...period, [field]: value },
-          },
-        });
-      },
-
-      addMemo: (text) => {
-        const { currentPeriodId, currentLevel, ensurePeriod } = get();
-        const period = ensurePeriod(currentPeriodId);
-        const freshState = get();
-        const currentMemos = period.structuredMemos || [];
-
-        const newMemo: Memo = {
-          id: genId(),
-          content: text,
-          sourceLevel: currentLevel,
-          sourcePeriodId: currentPeriodId,
-        };
-
-        set({
-          periods: {
-            ...freshState.periods,
-            [currentPeriodId]: {
-              ...period,
-              structuredMemos: [...currentMemos, newMemo],
-            },
-          },
-        });
-      },
-
-      removeMemo: (index) => {
-        const { currentPeriodId, ensurePeriod } = get();
-        const period = ensurePeriod(currentPeriodId);
-        const freshState = get();
-        const currentMemos = period.structuredMemos || [];
-
-        set({
-          periods: {
-            ...freshState.periods,
-            [currentPeriodId]: {
-              ...period,
-              structuredMemos: currentMemos.filter((_, i) => i !== index),
-            },
-          },
-        });
-      },
-
-      // 상위 기간 메모 수집 (현재 기간 포함)
-      getInheritedMemos: (periodId: string) => {
-        const state = get();
-        const allMemos: Memo[] = [];
-        let currentId: string | null = periodId;
-
-        // 무한루프 방지
-        let safeguard = 0;
-
-        // 부모 체인을 따라 올라가며 메모 수집
-        while (currentId && safeguard < 20) {
-          const period = state.periods[currentId];
-          if (period) {
-            // 구조화된 메모 추가
-            const structuredMemos = period.structuredMemos || [];
-            allMemos.push(...structuredMemos);
-
-            // 기존 string 배열 메모도 변환하여 추가 (하위호환)
-            const oldMemos = period.memos || [];
-            oldMemos.forEach((content, idx) => {
-              // 이미 structuredMemos에 같은 내용이 있으면 스킵
-              if (!structuredMemos.some(m => m.content === content)) {
-                allMemos.push({
-                  id: `legacy-${currentId}-${idx}`,
-                  content,
-                  sourceLevel: period.level,
-                  sourcePeriodId: currentId!,
-                });
-              }
-            });
-          }
-
-          // 부모 기간으로 이동
-          const parentId = getParentPeriodId(currentId, state.baseYear);
-          // self-reference 방지
-          if (parentId === currentId) break;
-          currentId = parentId;
-          safeguard++;
-        }
-
-        // 상위 레벨이 먼저 오도록 정렬 (THIRTY_YEAR → DAY 순서)
-        const levelOrder: Record<Level, number> = {
-          THIRTY_YEAR: 0,
-          FIVE_YEAR: 1,
-          YEAR: 2,
-          QUARTER: 3,
-          MONTH: 4,
-          WEEK: 5,
-          DAY: 6,
-        };
-
-        // 중복 제거 (Content + sourcePeriod 기준)
-        const uniqueMemos = allMemos.filter((memo, index, self) =>
-          index === self.findIndex((t) => (
-            t.content === memo.content && t.sourcePeriodId === memo.sourcePeriodId
-          ))
-        );
-
-        uniqueMemos.sort((a, b) => levelOrder[a.sourceLevel] - levelOrder[b.sourceLevel]);
-
-        return uniqueMemos;
-      },
-
-      addItem: (content, to, targetCount, category, todoCategory) => {
-        const { currentPeriodId, currentLevel, ensurePeriod } = get();
-        const period = ensurePeriod(currentPeriodId);
-
-        // ensurePeriod 후 fresh state 사용
-        const freshState = get();
-
-        // 루틴의 경우 초기 리셋 키 설정
-        const initialResetKey = targetCount !== undefined
-          ? getResetKey(currentPeriodId, currentLevel)
-          : undefined;
-
-        const newItem: Item = {
-          id: genId(),
-          content,
-          isCompleted: false,
-          targetCount,
-          currentCount: targetCount,
-          category: to === 'routine' ? category : undefined,  // 루틴만 category 사용
-          todoCategory: to === 'todo' ? todoCategory : undefined,  // 할일만 todoCategory 사용
-          originPeriodId: currentPeriodId,
-          sourceLevel: to === 'routine' ? currentLevel : undefined,
-          sourceType: to === 'routine' ? 'routine' : undefined,  // 뱃지 표시용
-          lastResetDate: initialResetKey,
-        };
-
-        const updatedPeriod = { ...period };
-        if (to === 'todo') {
-          updatedPeriod.todos = [...period.todos, newItem];
-        } else {
-          updatedPeriod.routines = [...period.routines, newItem];
-        }
-
-        set({
-          periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
-          allItems: { ...freshState.allItems, [newItem.id]: newItem },
-        });
-      },
-
-      updateItemCategory: (itemId, category, location, slotId) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
-
-        const updateItem = (item: Item) =>
-          item.id === itemId ? { ...item, category } : item;
-
-        const updatedPeriod = { ...period };
-        if (location === 'todo') {
-          updatedPeriod.todos = period.todos.map(updateItem);
-        } else if (location === 'routine') {
-          updatedPeriod.routines = period.routines.map(updateItem);
-        } else if (location === 'slot' && slotId) {
-          if (slotId.includes('_timeslot_')) {
-            // 시간대 슬롯
-            const timeSlot = slotId.split('_timeslot_')[1] as TimeSlot;
-            if (period.timeSlots?.[timeSlot]) {
-              updatedPeriod.timeSlots = {
-                ...period.timeSlots,
-                [timeSlot]: period.timeSlots[timeSlot].map(updateItem),
-              };
-            }
-          } else {
-            // 일반 슬롯
-            if (period.slots[slotId]) {
-              updatedPeriod.slots = {
-                ...period.slots,
-                [slotId]: period.slots[slotId].map(updateItem),
-              };
-            }
-          }
-        }
-
-        // allItems 업데이트
-        const currentItem = state.allItems[itemId];
-        const newAllItems = currentItem
-          ? { ...state.allItems, [itemId]: { ...currentItem, category } }
-          : state.allItems;
-
-        set({
-          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
-          allItems: newAllItems,
-        });
-      },
-
-      // 할일 카테고리 변경
-      updateTodoCategory: (itemId, todoCategory) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
-
-        const updatedTodos = period.todos.map(item =>
-          item.id === itemId ? { ...item, todoCategory } : item
-        );
-
+      // 기간이 없으면 생성
+      if (!state.periods[periodId]) {
         set({
           periods: {
             ...state.periods,
-            [state.currentPeriodId]: { ...period, todos: updatedTodos }
+            [periodId]: createEmptyPeriod(periodId, parsed.level),
           },
-          allItems: {
-            ...state.allItems,
-            [itemId]: { ...state.allItems[itemId], todoCategory }
-          }
         });
-      },
+      }
 
-      deleteItem: (itemId, from, slotId) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
+      set({
+        currentLevel: parsed.level,
+        currentPeriodId: periodId,
+      });
 
-        // 삭제할 모든 ID 수집 (연쇄 삭제)
-        const idsToDelete = new Set<string>();
-        const collectChildIds = (id: string) => {
-          idsToDelete.add(id);
-          const item = state.allItems[id];
-          if (item?.childIds) {
-            item.childIds.forEach(collectChildIds);
-          }
-        };
-        collectChildIds(itemId);
+      // 루틴 자동 리셋 체크
+      get().resetRoutinesIfNeeded(periodId);
+    },
 
-        // 모든 기간에서 관련 항목 삭제
-        const updatedPeriods = { ...state.periods };
+    drillDown: (childPeriodId) => {
+      get().navigateTo(childPeriodId);
+    },
 
-        Object.keys(updatedPeriods).forEach((periodId) => {
-          const p = updatedPeriods[periodId];
-          if (!p) return;
+    drillUp: () => {
+      const state = get();
+      const parentId = getParentPeriodId(state.currentPeriodId, state.baseYear);
+      if (parentId) {
+        get().navigateTo(parentId);
+      }
+    },
 
-          let needsUpdate = false;
-          const updatedP = { ...p };
+    setViewMode: (mode) => {
+      set({ viewMode: mode });
+    },
 
-          // todos에서 삭제
-          const filteredTodos = p.todos.filter((i) => !idsToDelete.has(i.id));
-          if (filteredTodos.length !== p.todos.length) {
-            updatedP.todos = filteredTodos;
-            needsUpdate = true;
-          }
+    toggleViewMode: () => {
+      const state = get();
+      set({ viewMode: state.viewMode === 'plan' ? 'record' : 'plan' });
+    },
 
-          // routines에서 삭제
-          const filteredRoutines = p.routines.filter((i) => !idsToDelete.has(i.id));
-          if (filteredRoutines.length !== p.routines.length) {
-            updatedP.routines = filteredRoutines;
-            needsUpdate = true;
-          }
+    updatePeriodHeader: (field, value) => {
+      const { currentPeriodId, ensurePeriod } = get();
+      const period = ensurePeriod(currentPeriodId);
 
-          // slots에서 삭제
-          const updatedSlots: Record<string, Item[]> = {};
-          let slotsChanged = false;
-          Object.keys(p.slots).forEach((slotKey) => {
-            const filtered = p.slots[slotKey].filter((i) => !idsToDelete.has(i.id));
-            updatedSlots[slotKey] = filtered;
-            if (filtered.length !== p.slots[slotKey].length) {
-              slotsChanged = true;
-            }
-          });
-          if (slotsChanged) {
-            updatedP.slots = updatedSlots;
-            needsUpdate = true;
-          }
+      // ensurePeriod 후 fresh state 사용
+      const freshState = get();
 
-          // timeSlots에서 삭제 (일 뷰)
-          if (p.timeSlots) {
-            const updatedTimeSlots: Record<TimeSlot, Item[]> = {
-              dawn: [],
-              morning_early: [],
-              morning_late: [],
-              afternoon_early: [],
-              afternoon_late: [],
-              evening_early: [],
-              evening_late: [],
-              anytime: [],
-            };
-            let timeSlotsChanged = false;
-            (Object.keys(p.timeSlots) as TimeSlot[]).forEach((ts) => {
-              const filtered = (p.timeSlots![ts] || []).filter((i) => !idsToDelete.has(i.id));
-              updatedTimeSlots[ts] = filtered;
-              if (filtered.length !== (p.timeSlots![ts] || []).length) {
-                timeSlotsChanged = true;
-              }
-            });
-            if (timeSlotsChanged) {
-              updatedP.timeSlots = updatedTimeSlots;
-              needsUpdate = true;
-            }
-          }
+      set({
+        periods: {
+          ...freshState.periods,
+          [currentPeriodId]: { ...period, [field]: value },
+        },
+      });
+    },
 
-          if (needsUpdate) {
-            updatedPeriods[periodId] = updatedP;
-          }
-        });
+    addMemo: (text) => {
+      const { currentPeriodId, currentLevel, ensurePeriod } = get();
+      const period = ensurePeriod(currentPeriodId);
+      const freshState = get();
+      const currentMemos = period.structuredMemos || [];
 
-        // allItems에서 삭제 및 부모 관계 정리
-        const newAllItems = { ...state.allItems };
-        const item = newAllItems[itemId];
-        let parentIdToUpdate: string | null = null;
+      const newMemo: Memo = {
+        id: genId(),
+        content: text,
+        sourceLevel: currentLevel,
+        sourcePeriodId: currentPeriodId,
+      };
 
-        // 부모의 childIds에서 제거
-        if (item?.parentId) {
-          const parent = newAllItems[item.parentId];
-          if (parent?.childIds) {
-            parentIdToUpdate = item.parentId;
-            newAllItems[item.parentId] = {
-              ...parent,
-              childIds: parent.childIds.filter((id) => id !== itemId),
-            };
-          }
-        }
+      set({
+        periods: {
+          ...freshState.periods,
+          [currentPeriodId]: {
+            ...period,
+            structuredMemos: [...currentMemos, newMemo],
+          },
+        },
+      });
+    },
 
-        // 모든 관련 항목 삭제
-        idsToDelete.forEach((id) => {
-          delete newAllItems[id];
-        });
+    removeMemo: (index) => {
+      const { currentPeriodId, ensurePeriod } = get();
+      const period = ensurePeriod(currentPeriodId);
+      const freshState = get();
+      const currentMemos = period.structuredMemos || [];
 
-        // 부모의 childIds 변경을 모든 기간에 동기화
-        if (parentIdToUpdate) {
-          const updatedParent = newAllItems[parentIdToUpdate];
-          Object.keys(updatedPeriods).forEach((periodId) => {
-            const p = updatedPeriods[periodId];
-            if (!p) return;
+      set({
+        periods: {
+          ...freshState.periods,
+          [currentPeriodId]: {
+            ...period,
+            structuredMemos: currentMemos.filter((_, i) => i !== index),
+          },
+        },
+      });
+    },
 
-            const updatedP = { ...p };
-            let needsParentSync = false;
+    // 상위 기간 메모 수집 (현재 기간 포함)
+    getInheritedMemos: (periodId: string) => {
+      const state = get();
+      const allMemos: Memo[] = [];
+      let currentId: string | null = periodId;
 
-            // todos에서 부모 업데이트
-            const parentInTodos = p.todos.findIndex((i) => i.id === parentIdToUpdate);
-            if (parentInTodos !== -1) {
-              updatedP.todos = p.todos.map((i) =>
-                i.id === parentIdToUpdate ? { ...i, childIds: updatedParent.childIds } : i
-              );
-              needsParentSync = true;
-            }
+      // 부모 체인을 따라 올라가며 메모 수집
+      while (currentId) {
+        const period = state.periods[currentId];
+        if (period) {
+          // 구조화된 메모 추가
+          const structuredMemos = period.structuredMemos || [];
+          allMemos.push(...structuredMemos);
 
-            // routines에서 부모 업데이트
-            const parentInRoutines = p.routines.findIndex((i) => i.id === parentIdToUpdate);
-            if (parentInRoutines !== -1) {
-              updatedP.routines = p.routines.map((i) =>
-                i.id === parentIdToUpdate ? { ...i, childIds: updatedParent.childIds } : i
-              );
-              needsParentSync = true;
-            }
-
-            if (needsParentSync) {
-              updatedPeriods[periodId] = updatedP;
+          // 기존 string 배열 메모도 변환하여 추가 (하위호환)
+          const oldMemos = period.memos || [];
+          oldMemos.forEach((content, idx) => {
+            // 이미 structuredMemos에 같은 내용이 있으면 스킵
+            if (!structuredMemos.some(m => m.content === content)) {
+              allMemos.push({
+                id: `legacy-${currentId}-${idx}`,
+                content,
+                sourceLevel: period.level,
+                sourcePeriodId: currentId!,
+              });
             }
           });
         }
 
-        set({
-          periods: updatedPeriods,
-          allItems: newAllItems,
-        });
-      },
+        // 부모 기간으로 이동
+        currentId = getParentPeriodId(currentId, state.baseYear);
+      }
 
-      updateItemContent: (itemId, content, location, slotId) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
+      // 상위 레벨이 먼저 오도록 정렬 (THIRTY_YEAR → DAY 순서)
+      const levelOrder: Record<Level, number> = {
+        THIRTY_YEAR: 0,
+        FIVE_YEAR: 1,
+        YEAR: 2,
+        QUARTER: 3,
+        MONTH: 4,
+        WEEK: 5,
+        DAY: 6,
+      };
+      allMemos.sort((a, b) => levelOrder[a.sourceLevel] - levelOrder[b.sourceLevel]);
 
-        const updater = (item: Item): Item =>
-          item.id === itemId ? { ...item, content } : item;
+      return allMemos;
+    },
 
-        const updatedPeriod = { ...period };
+    addItem: (content, to, targetCount, category, todoCategory) => {
+      const { currentPeriodId, currentLevel, ensurePeriod } = get();
+      const period = ensurePeriod(currentPeriodId);
 
-        if (location === 'todo') {
-          updatedPeriod.todos = period.todos.map(updater);
-        } else if (location === 'routine') {
-          updatedPeriod.routines = period.routines.map(updater);
-        } else if (location === 'slot' && slotId) {
-          // 시간대 슬롯 체크
-          const parsedTimeSlot = parseTimeSlotId(slotId);
-          if (parsedTimeSlot && period.timeSlots) {
-            const { timeSlot } = parsedTimeSlot;
+      // ensurePeriod 후 fresh state 사용
+      const freshState = get();
+
+      // 루틴의 경우 초기 리셋 키 설정
+      const initialResetKey = targetCount !== undefined
+        ? getResetKey(currentPeriodId, currentLevel)
+        : undefined;
+
+      const newItem: Item = {
+        id: genId(),
+        content,
+        isCompleted: false,
+        targetCount,
+        currentCount: targetCount,
+        category: to === 'routine' ? category : undefined,  // 루틴만 category 사용
+        todoCategory: to === 'todo' ? todoCategory : undefined,  // 할일만 todoCategory 사용
+        originPeriodId: currentPeriodId,
+        sourceLevel: to === 'routine' ? currentLevel : undefined,
+        sourceType: to === 'routine' ? 'routine' : undefined,  // 뱃지 표시용
+        lastResetDate: initialResetKey,
+      };
+
+      const updatedPeriod = { ...period };
+      if (to === 'todo') {
+        updatedPeriod.todos = [...period.todos, newItem];
+      } else {
+        updatedPeriod.routines = [...period.routines, newItem];
+      }
+
+      set({
+        periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
+        allItems: { ...freshState.allItems, [newItem.id]: newItem },
+      });
+    },
+
+    updateItemCategory: (itemId, category, location, slotId) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
+
+      const updateItem = (item: Item) =>
+        item.id === itemId ? { ...item, category } : item;
+
+      const updatedPeriod = { ...period };
+      if (location === 'todo') {
+        updatedPeriod.todos = period.todos.map(updateItem);
+      } else if (location === 'routine') {
+        updatedPeriod.routines = period.routines.map(updateItem);
+      } else if (location === 'slot' && slotId) {
+        if (slotId.includes('_timeslot_')) {
+          // 시간대 슬롯
+          const timeSlot = slotId.split('_timeslot_')[1] as TimeSlot;
+          if (period.timeSlots?.[timeSlot]) {
             updatedPeriod.timeSlots = {
               ...period.timeSlots,
-              [timeSlot]: (period.timeSlots[timeSlot] || []).map(updater),
+              [timeSlot]: period.timeSlots[timeSlot].map(updateItem),
             };
-          } else {
+          }
+        } else {
+          // 일반 슬롯
+          if (period.slots[slotId]) {
             updatedPeriod.slots = {
               ...period.slots,
-              [slotId]: (period.slots[slotId] || []).map(updater),
+              [slotId]: period.slots[slotId].map(updateItem),
             };
           }
         }
+      }
 
-        // allItems도 업데이트
-        const newAllItems = { ...state.allItems };
-        if (newAllItems[itemId]) {
-          newAllItems[itemId] = { ...newAllItems[itemId], content };
+      // allItems 업데이트
+      const currentItem = state.allItems[itemId];
+      const newAllItems = currentItem
+        ? { ...state.allItems, [itemId]: { ...currentItem, category } }
+        : state.allItems;
+
+      set({
+        periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+        allItems: newAllItems,
+      });
+    },
+
+    // 할일 카테고리 변경
+    updateTodoCategory: (itemId, todoCategory) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
+
+      const updatedTodos = period.todos.map(item =>
+        item.id === itemId ? { ...item, todoCategory } : item
+      );
+
+      set({
+        periods: {
+          ...state.periods,
+          [state.currentPeriodId]: { ...period, todos: updatedTodos }
+        },
+        allItems: {
+          ...state.allItems,
+          [itemId]: { ...state.allItems[itemId], todoCategory }
         }
+      });
+    },
 
-        set({
-          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
-          allItems: newAllItems,
-        });
-      },
+    deleteItem: (itemId, from, slotId) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
 
-      updateItemColor: (itemId, color, location, slotId) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
-
-        const colorizer = (item: Item): Item =>
-          item.id === itemId ? { ...item, color } : item;
-
-        const updatedPeriod = { ...period };
-
-        if (location === 'todo') {
-          updatedPeriod.todos = period.todos.map(colorizer);
-        } else if (location === 'routine') {
-          updatedPeriod.routines = period.routines.map(colorizer);
-        } else if (location === 'slot' && slotId) {
-          // 시간대 슬롯 체크
-          const parsedTimeSlot = parseTimeSlotId(slotId);
-          if (parsedTimeSlot && period.timeSlots) {
-            const { timeSlot } = parsedTimeSlot;
-            updatedPeriod.timeSlots = {
-              ...period.timeSlots,
-              [timeSlot]: (period.timeSlots[timeSlot] || []).map(colorizer),
-            };
-          } else {
-            updatedPeriod.slots = {
-              ...period.slots,
-              [slotId]: (period.slots[slotId] || []).map(colorizer),
-            };
-          }
+      // 삭제할 모든 ID 수집 (연쇄 삭제)
+      const idsToDelete = new Set<string>();
+      const collectChildIds = (id: string) => {
+        idsToDelete.add(id);
+        const item = state.allItems[id];
+        if (item?.childIds) {
+          item.childIds.forEach(collectChildIds);
         }
-
-        set({
-          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
-        });
-      },
-
-      updateItemNote: (itemId, note, location, slotId) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
-
-        const updater = (item: Item): Item =>
-          item.id === itemId ? { ...item, note } : item;
-
-        const updatedPeriod = { ...period };
-
-        if (location === 'todo') {
-          updatedPeriod.todos = period.todos.map(updater);
-        } else if (location === 'routine') {
-          updatedPeriod.routines = period.routines.map(updater);
-        } else if (location === 'slot' && slotId) {
-          // 시간대 슬롯 체크
-          const parsedTimeSlot = parseTimeSlotId(slotId);
-          if (parsedTimeSlot && period.timeSlots) {
-            const { timeSlot } = parsedTimeSlot;
-            updatedPeriod.timeSlots = {
-              ...period.timeSlots,
-              [timeSlot]: (period.timeSlots[timeSlot] || []).map(updater),
-            };
-          } else {
-            updatedPeriod.slots = {
-              ...period.slots,
-              [slotId]: (period.slots[slotId] || []).map(updater),
-            };
-          }
-        }
-
-        // allItems도 업데이트
-        const newAllItems = { ...state.allItems };
-        if (newAllItems[itemId]) {
-          newAllItems[itemId] = { ...newAllItems[itemId], note };
-        }
-
-        set({
-          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
-          allItems: newAllItems,
-        });
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 핵심: 슬롯 배정 (쪼개기) - 계층 구조 유지 수정
-      // ═══════════════════════════════════════════════════════════
-      assignToSlot: (itemId, from, targetSlotId, subContent) => {
-        const { currentPeriodId, currentLevel, ensurePeriod } = get();
-        const period = ensurePeriod(currentPeriodId);
-
-        // ensurePeriod 후 fresh state 사용
-        const freshState = get();
-
-        // 원본 아이템 찾기
-        const sourceList = from === 'todo' ? period.todos : period.routines;
-        const originalItem = sourceList.find((i) => i.id === itemId);
-        if (!originalItem) return;
-
-        // 원본 아이템이 하위 항목인지 확인 (parentId가 있는지)
-        const parentId = originalItem.parentId;
-        let targetParentId = parentId; // 슬롯 내에서의 부모 ID
-
-        // 하위 항목이면, 타겟 슬롯에 부모가 있는지 확인하고 없으면 생성
-        const slotItems = period.slots[targetSlotId] || [];
-
-        if (parentId) {
-          const originalParent = sourceList.find(p => p.id === parentId);
-          if (originalParent) {
-            // 슬롯에 이미 같은 내용의 부모가 있는지 확인 (content와 category로 매칭)
-            // 주의: 단순 매칭은 동명이인이 있을 수 있으나, 여기서는 UX 편의성을 위해 내용 기반 매칭 사용
-            const existingParentInSlot = slotItems.find(
-              i => i.content === originalParent.content &&
-                i.category === originalParent.category &&
-                !i.parentId // 최상위 항목이어야 함
-            );
-
-            if (existingParentInSlot) {
-              targetParentId = existingParentInSlot.id;
-            } else {
-              // 부모 클론 생성
-              const newParentId = genId();
-              const parentClone: Item = {
-                id: newParentId,
-                content: originalParent.content,
-                isCompleted: false,
-                color: originalParent.color,
-                category: originalParent.category,
-                todoCategory: originalParent.todoCategory,
-                originPeriodId: currentPeriodId,
-                sourceLevel: currentLevel,
-                sourceType: from,
-                childIds: [], // 자식 ID는 아래에서 추가됨
-                isExpanded: true, // 붙여넣으면 펼쳐서 보여줌
-              };
-
-              // 슬롯에 부모 추가
-              // 여기서 바로 업데이트하지 않고, 아래 로직과 합쳐서 일괄 처리
-              targetParentId = newParentId;
-
-              // 부모 클론을 슬롯 아이템 목록에 추가할 준비 (임시)
-              slotItems.push(parentClone);
-            }
-          }
-        } else {
-          // 최상위 항목이면 parentId 없음
-          targetParentId = undefined;
-        }
-
-        // 새 아이템 생성 (부모 연결)
-        // subContent가 있으면 "원본: 세부내용" 형식으로 표시
-        const displayContent = subContent
-          ? `${originalItem.content}: ${subContent}`
-          : originalItem.content;
-
-        const newItem: Item = {
-          id: genId(),
-          content: displayContent,
-          isCompleted: false,
-          color: originalItem.color,
-          category: originalItem.category,  // 루틴 카테고리 복사
-          todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
-          parentId: targetParentId, // 슬롯 내의 부모 ID 연결 (없으면 undefined)
-          originPeriodId: currentPeriodId,
-          subContent: subContent,
-          // 출처 정보 저장
-          sourceLevel: currentLevel,
-          sourceType: from,
-        };
-
-        // 타겟 부모가 있으면 자식 목록 업데이트
-        if (targetParentId) {
-          const parentInSlot = slotItems.find(i => i.id === targetParentId);
-          if (parentInSlot) {
-            parentInSlot.childIds = [...(parentInSlot.childIds || []), newItem.id];
-          }
-        }
-
-        // 부모에 자식 ID 추가 (원본 쪽 업데이트 - 기존 로직 유지)
-        const updatedOriginal: Item = {
-          ...originalItem,
-          childIds: [...(originalItem.childIds || []), newItem.id],
-        };
-
-        // 기간 업데이트
-        const updatedPeriod = { ...period };
-
-        // 원본 리스트 업데이트
-        if (from === 'todo') {
-          updatedPeriod.todos = period.todos.map((i) =>
-            i.id === itemId ? updatedOriginal : i
-          );
-        } else {
-          // 루틴: targetCount가 있는 경우 카운트 감소 (0이 되어도 유지)
-          if (originalItem.targetCount !== undefined) {
-            const newCount = (originalItem.currentCount ?? originalItem.targetCount) - 1;
-            const updatedRoutine: Item = {
-              ...updatedOriginal,
-              currentCount: Math.max(0, newCount),
-            };
-            // 카운트가 0이 되어도 부모는 유지 (진행률 표시용)
-            updatedPeriod.routines = period.routines.map((i) =>
-              i.id === itemId ? updatedRoutine : i
-            );
-          } else {
-            // targetCount가 없으면 할일처럼 그냥 유지
-            updatedPeriod.routines = period.routines.map((i) =>
-              i.id === itemId ? updatedOriginal : i
-            );
-          }
-        }
-
-        // 슬롯에 추가 (이미 부모 클론이 push 되어 있을 수 있음)
-        updatedPeriod.slots = {
-          ...period.slots,
-          [targetSlotId]: [...slotItems, newItem], // 부모(있으면) + 자식
-        };
-
-        // 하위 기간에도 할일로 추가 (전파!)
-        const updatedPeriods = { ...freshState.periods, [currentPeriodId]: updatedPeriod };
-
-        // 하위 기간 확보 및 할일 추가
-        // 주의: 하위 기간 전파 시에는 계층 구조를 단순화하거나, 부모도 같이 전파해야 함.
-        // 현재 로직은 '해당 아이템'만 전파. 계층 구조 복잡성을 피하기 위해 전파는 단일 아이템으로 유지하되,
-        // 필요하다면 추후 개선. 지금은 '슬롯 내 보여주기'가 우선.
-        const childPeriod = freshState.periods[targetSlotId] || createEmptyPeriod(targetSlotId, LEVEL_CONFIG[currentLevel].childLevel!);
-
-        // 전파될 아이템
-        const propagatedItem: Item = {
-          ...newItem,
-          id: genId(), // 새 ID
-          parentId: newItem.id, // 슬롯 아이템이 부모가 됨 (추적용)
-          category: originalItem.category,
-          todoCategory: originalItem.todoCategory,
-        };
-
-        // 슬롯 아이템에 전파된 아이템을 자식으로 추가 (체인 연결)
-        const newItemWithChild: Item = {
-          ...newItem,
-          childIds: [propagatedItem.id],
-        };
-
-        // 슬롯의 아이템 업데이트 (newItem 교체)
-        updatedPeriod.slots[targetSlotId] = updatedPeriod.slots[targetSlotId].map(item =>
-          item.id === newItem.id ? newItemWithChild : item
-        );
-        updatedPeriods[currentPeriodId] = updatedPeriod;
-
-        updatedPeriods[targetSlotId] = {
-          ...childPeriod,
-          todos: [...childPeriod.todos, propagatedItem],
-        };
-
-        // 상태 업데이트
-        // allItems에 새로 생성된 모든 아이템 추가 (부모 클론 포함)
-        const newAllItems = { ...freshState.allItems };
-
-        // 부모 클론이 생성되었으면 추가
-        if (parentId && targetParentId && targetParentId !== parentId) { // parentId가 변경되었다면 새 부모가 생긴 것
-          const parentInSlot = updatedPeriod.slots[targetSlotId].find(i => i.id === targetParentId);
-          if (parentInSlot) {
-            newAllItems[parentInSlot.id] = parentInSlot;
-          }
-        }
-
-        newAllItems[newItem.id] = newItemWithChild;
-        newAllItems[propagatedItem.id] = propagatedItem;
-        newAllItems[updatedOriginal.id] = updatedOriginal;
-
-        set({
-          periods: updatedPeriods,
-          allItems: newAllItems,
-        });
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 시간대 슬롯 배정 (일 뷰 전용) - 계층 구조 유지 수정
-      // ═══════════════════════════════════════════════════════════
-      assignToTimeSlot: (itemId, from, timeSlot, subContent) => {
-        const { currentPeriodId, currentLevel, ensurePeriod } = get();
-
-        // DAY 레벨에서만 작동
-        if (currentLevel !== 'DAY') return;
-
-        const period = ensurePeriod(currentPeriodId);
-        const freshState = get();
-
-        // 원본 아이템 찾기
-        const sourceList = from === 'todo' ? period.todos : period.routines;
-        const originalItem = sourceList.find((i) => i.id === itemId);
-        if (!originalItem) return;
-
-        // 타겟 시간대 슬롯 아이템 목록 준비
-        const timeSlots = period.timeSlots || {
-          dawn: [], morning_early: [], morning_late: [], afternoon_early: [],
-          afternoon_late: [], evening_early: [], evening_late: [], anytime: []
-        };
-        const slotItems = [...(timeSlots[timeSlot] || [])];
-
-        // 원본 아이템이 하위 항목인지 확인
-        const parentId = originalItem.parentId;
-        let targetParentId = parentId;
-
-        if (parentId) {
-          const originalParent = sourceList.find(p => p.id === parentId);
-          if (originalParent) {
-            const existingParentInSlot = slotItems.find(
-              i => i.content === originalParent.content &&
-                i.category === originalParent.category &&
-                !i.parentId
-            );
-
-            if (existingParentInSlot) {
-              targetParentId = existingParentInSlot.id;
-            } else {
-              // 부모 클론 생성
-              const newParentId = genId();
-              const parentClone: Item = {
-                id: newParentId,
-                content: originalParent.content,
-                isCompleted: false,
-                color: originalParent.color,
-                category: originalParent.category,
-                todoCategory: originalParent.todoCategory,
-                originPeriodId: currentPeriodId,
-                sourceLevel: currentLevel,
-                sourceType: from,
-                childIds: [],
-                isExpanded: true,
-              };
-
-              targetParentId = newParentId;
-              slotItems.push(parentClone);
-            }
-          }
-        } else {
-          targetParentId = undefined;
-        }
-
-        // subContent가 있으면 "원본: 세부내용" 형식으로 표시
-        const displayContent = subContent
-          ? `${originalItem.content}: ${subContent}`
-          : originalItem.content;
-
-        // 시간대 슬롯용 새 아이템 생성
-        const newItem: Item = {
-          id: genId(),
-          content: displayContent,
-          isCompleted: false,
-          color: originalItem.color,
-          category: originalItem.category,  // 루틴 카테고리 복사
-          todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
-          subContent: subContent,
-          // 출처 정보 (원본의 출처 유지 또는 현재 레벨)
-          sourceLevel: originalItem.sourceLevel || currentLevel,
-          sourceType: originalItem.sourceType || from,
-          parentId: targetParentId, // 슬롯 내 부모 연결
-          originPeriodId: currentPeriodId,
-          childIds: [], // 하위 항목 복사용
-          isExpanded: true, // 기본 펼침
-        };
-
-        // 원본이 부모(자식이 있는 경우) → 자식들도 함께 복사
-        const childClones: Item[] = [];
-        if (originalItem.childIds && originalItem.childIds.length > 0 && !parentId) {
-          // 원본 자식들 찾아서 복사
-          for (const childId of originalItem.childIds) {
-            const originalChild = sourceList.find(i => i.id === childId);
-            if (originalChild) {
-              const childClone: Item = {
-                id: genId(),
-                content: originalChild.content,
-                isCompleted: false,
-                color: originalChild.color,
-                category: originalChild.category,
-                todoCategory: originalChild.todoCategory,
-                sourceLevel: originalChild.sourceLevel || currentLevel,
-                sourceType: originalChild.sourceType || from,
-                parentId: newItem.id, // 새 부모에 연결
-                originPeriodId: currentPeriodId,
-              };
-              childClones.push(childClone);
-              newItem.childIds!.push(childClone.id);
-            }
-          }
-        }
-
-        // 타겟 부모가 있으면 자식 목록 업데이트
-        if (targetParentId) {
-          const parentInSlot = slotItems.find(i => i.id === targetParentId);
-          if (parentInSlot) {
-            parentInSlot.childIds = [...(parentInSlot.childIds || []), newItem.id];
-          }
-        }
-
-        // 부모에 자식 ID 추가 (원본) - 자식 클론 ID는 추가하지 않음 (별도 추적)
-        const updatedOriginal: Item = {
-          ...originalItem,
-          childIds: [...(originalItem.childIds || []), newItem.id],
-        };
-
-        // 기간 업데이트
-        const updatedPeriod = { ...period };
-
-        // timeSlots 초기화 (없을 경우) - 위에서 이미 처리했지만 안전하게 재할당
-        if (!updatedPeriod.timeSlots) {
-          updatedPeriod.timeSlots = timeSlots;
-        }
-
-        // 원본 리스트 업데이트
-        if (from === 'todo') {
-          updatedPeriod.todos = period.todos.map((i) =>
-            i.id === itemId ? updatedOriginal : i
-          );
-        } else {
-          // 루틴: targetCount가 있는 경우 카운트 감소 (0이 되어도 유지)
-          if (originalItem.targetCount !== undefined) {
-            const newCount = (originalItem.currentCount ?? originalItem.targetCount) - 1;
-            const updatedRoutine: Item = {
-              ...updatedOriginal,
-              currentCount: Math.max(0, newCount),
-            };
-            // 카운트가 0이 되어도 부모는 유지 (진행률 표시용)
-            updatedPeriod.routines = period.routines.map((i) =>
-              i.id === itemId ? updatedRoutine : i
-            );
-          } else {
-            updatedPeriod.routines = period.routines.map((i) =>
-              i.id === itemId ? updatedOriginal : i
-            );
-          }
-        }
-
-        // 시간대 슬롯에 추가 (부모 + 자식 클론들 포함)
-        updatedPeriod.timeSlots = {
-          ...updatedPeriod.timeSlots,
-          [timeSlot]: [...slotItems, newItem, ...childClones],
-        };
-
-        // 상태 업데이트
-        const newAllItems = { ...freshState.allItems };
-
-        // 부모 클론 추가 check
-        if (parentId && targetParentId && targetParentId !== parentId) {
-          const parentInSlot = slotItems.find(i => i.id === targetParentId);
-          if (parentInSlot) newAllItems[parentInSlot.id] = parentInSlot;
-        }
-
-        newAllItems[newItem.id] = newItem;
-        newAllItems[updatedOriginal.id] = updatedOriginal;
-
-        // 자식 클론들도 allItems에 추가
-        for (const childClone of childClones) {
-          newAllItems[childClone.id] = childClone;
-        }
-
-        set({
-          periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
-          allItems: newAllItems,
-        });
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 슬롯 간 아이템 이동
-      // ═══════════════════════════════════════════════════════════
-      moveSlotItem: (itemId, fromSlotId, toSlotId) => {
-        const { currentPeriodId, ensurePeriod } = get();
-        const period = ensurePeriod(currentPeriodId);
-        const freshState = get();
-
-        // 동일 슬롯이면 무시
-        if (fromSlotId === toSlotId) return;
-
-        // 원본 슬롯에서 아이템 찾기
-        const fromItems = period.slots[fromSlotId] || [];
-        const itemToMove = fromItems.find((i) => i.id === itemId);
-        if (!itemToMove) return;
-
-        // 원본 슬롯에서 제거
-        const updatedFromItems = fromItems.filter((i) => i.id !== itemId);
-
-        // 대상 슬롯에 추가
-        const toItems = period.slots[toSlotId] || [];
-        const updatedToItems = [...toItems, itemToMove];
-
-        // 기간 업데이트
-        const updatedPeriod = {
-          ...period,
-          slots: {
-            ...period.slots,
-            [fromSlotId]: updatedFromItems,
-            [toSlotId]: updatedToItems,
-          },
-        };
-
-        set({
-          periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
-        });
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 시간대 슬롯 간 아이템 이동
-      // ═══════════════════════════════════════════════════════════
-      moveTimeSlotItem: (itemId, fromSlotId, toSlotId) => {
-        const { currentPeriodId, ensurePeriod, currentLevel } = get();
-
-        // DAY 레벨에서만 작동
-        if (currentLevel !== 'DAY') return;
-
-        const period = ensurePeriod(currentPeriodId);
-        const freshState = get();
-
-        // 동일 슬롯이면 무시
-        if (fromSlotId === toSlotId) return;
-
-        // 시간대 슬롯 ID에서 TimeSlot 추출 (ts-d-2025-01-10-morning_early -> morning_early)
-        const fromParts = fromSlotId.split('-');
-        const fromTimeSlot = fromParts[fromParts.length - 1] as TimeSlot;
-        const toParts = toSlotId.split('-');
-        const toTimeSlot = toParts[toParts.length - 1] as TimeSlot;
-
-        if (!period.timeSlots) return;
-
-        // 원본 슬롯에서 아이템 찾기
-        const fromItems = period.timeSlots[fromTimeSlot] || [];
-        const itemToMove = fromItems.find((i) => i.id === itemId);
-        if (!itemToMove) return;
-
-        // 원본 슬롯에서 제거
-        const updatedFromItems = fromItems.filter((i) => i.id !== itemId);
-
-        // 대상 슬롯에 추가
-        const toItems = period.timeSlots[toTimeSlot] || [];
-        const updatedToItems = [...toItems, itemToMove];
-
-        // 기간 업데이트
-        const updatedPeriod = {
-          ...period,
-          timeSlots: {
-            ...period.timeSlots,
-            [fromTimeSlot]: updatedFromItems,
-            [toTimeSlot]: updatedToItems,
-          },
-        };
-
-        set({
-          periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
-        });
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 쪼개기: 하위 항목 추가
-      // ═══════════════════════════════════════════════════════════
-      addSubItem: (parentId, content, location) => {
-        const state = get();
-        const { currentPeriodId, currentLevel } = state;
-        const period = state.periods[currentPeriodId];
-        if (!period) return;
-
-        const sourceList = location === 'todo' ? period.todos : period.routines;
-        const parentItem = sourceList.find((i) => i.id === parentId);
-        if (!parentItem) return;
-
-        // 새 하위 항목 생성 (부모의 카테고리 상속)
-        const newItem: Item = {
-          id: genId(),
-          content,
-          isCompleted: false,
-          color: parentItem.color,
-          category: parentItem.category, // 루틴 카테고리 상속
-          todoCategory: parentItem.todoCategory, // 할일 카테고리 상속
-          parentId: parentId,
-          originPeriodId: currentPeriodId,
-          sourceLevel: currentLevel,
-          sourceType: location === 'routine' ? 'routine' : 'todo',
-        };
-
-        // 부모 아이템 업데이트 (childIds에 추가, 펼치기)
-        const updatedParent: Item = {
-          ...parentItem,
-          childIds: [...(parentItem.childIds || []), newItem.id],
-          isExpanded: true,
-        };
-
-        // 리스트 업데이트
-        const updatedPeriod = { ...period };
-        if (location === 'todo') {
-          // 부모 업데이트 + 새 항목 추가 (부모 바로 뒤에)
-          const parentIndex = period.todos.findIndex((i) => i.id === parentId);
-          const newTodos = [...period.todos];
-          newTodos[parentIndex] = updatedParent;
-          // 부모의 마지막 자식 뒤에 삽입
-          let insertIndex = parentIndex + 1;
-          for (let i = parentIndex + 1; i < newTodos.length; i++) {
-            if (newTodos[i].parentId === parentId) {
-              insertIndex = i + 1;
-            } else if (!newTodos[i].parentId || newTodos[i].parentId !== parentId) {
-              break;
-            }
-          }
-          newTodos.splice(insertIndex, 0, newItem);
-          updatedPeriod.todos = newTodos;
-        } else {
-          const parentIndex = period.routines.findIndex((i) => i.id === parentId);
-          const newRoutines = [...period.routines];
-          newRoutines[parentIndex] = updatedParent;
-          let insertIndex = parentIndex + 1;
-          for (let i = parentIndex + 1; i < newRoutines.length; i++) {
-            if (newRoutines[i].parentId === parentId) {
-              insertIndex = i + 1;
-            } else if (!newRoutines[i].parentId || newRoutines[i].parentId !== parentId) {
-              break;
-            }
-          }
-          newRoutines.splice(insertIndex, 0, newItem);
-          updatedPeriod.routines = newRoutines;
-        }
-
-        set({
-          periods: { ...state.periods, [currentPeriodId]: updatedPeriod },
-          allItems: {
-            ...state.allItems,
-            [newItem.id]: newItem,
-            [updatedParent.id]: updatedParent,
-          },
-        });
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 접기/펼치기 토글
-      // ═══════════════════════════════════════════════════════════
-      toggleExpand: (itemId, location, slotId) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
-
-        const toggler = (item: Item): Item =>
-          item.id === itemId ? { ...item, isExpanded: !item.isExpanded } : item;
-
-        const updatedPeriod = { ...period };
-
-        if (location === 'todo') {
-          updatedPeriod.todos = period.todos.map(toggler);
-        } else if (location === 'routine') {
-          updatedPeriod.routines = period.routines.map(toggler);
-        } else if (location === 'slot' && slotId) {
-          const slotItems = period.slots[slotId] || [];
-          updatedPeriod.slots = {
-            ...period.slots,
-            [slotId]: slotItems.map(toggler)
-          };
-        } else if (location === 'timeslot' && slotId && period.timeSlots) {
-          const tsId = slotId as import('../types/plan').TimeSlot;
-          const tsItems = period.timeSlots?.[tsId] || [];
-          updatedPeriod.timeSlots = {
-            ...period.timeSlots,
-            [tsId]: tsItems.map(toggler)
-          };
-        }
-
-        set({
-          periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
-        });
-      },
-
-      toggleComplete: (itemId, location, slotId) => {
-        const state = get();
-        const period = state.periods[state.currentPeriodId];
-        if (!period) return;
-
-        // allItems 먼저 업데이트
-        const newAllItems = { ...state.allItems };
-        const targetItem = newAllItems[itemId];
-        if (!targetItem) return;
-
-        const newCompletedState = !targetItem.isCompleted;
-        newAllItems[itemId] = { ...targetItem, isCompleted: newCompletedState };
-
-        // 자식들도 같은 상태로 변경 (하위 전파)
-        const updateChildrenRecursive = (parentId: string, completed: boolean) => {
-          const parent = newAllItems[parentId];
-          if (!parent?.childIds) return;
-
-          parent.childIds.forEach((childId) => {
-            const child = newAllItems[childId];
-            if (child) {
-              newAllItems[childId] = { ...child, isCompleted: completed };
-              // 재귀적으로 손자들도 업데이트
-              updateChildrenRecursive(childId, completed);
-            }
-          });
-        };
-        updateChildrenRecursive(itemId, newCompletedState);
-
-        // 부모 체인 업데이트 (자식 완료 시 부모 진행률 체크)
-        const updateParentChain = (childId: string) => {
-          const child = newAllItems[childId];
-          if (!child?.parentId) return;
-
-          const parent = newAllItems[child.parentId];
-          if (!parent?.childIds || parent.childIds.length === 0) return;
-
-          // 부모의 진행률 계산
-          const completedCount = parent.childIds.filter(
-            (cid) => newAllItems[cid]?.isCompleted
-          ).length;
-          const progress = Math.round((completedCount / parent.childIds.length) * 100);
-
-          // 100%면 부모도 완료, 아니면 미완료
-          const shouldBeCompleted = progress === 100;
-          if (parent.isCompleted !== shouldBeCompleted) {
-            newAllItems[parent.id] = { ...parent, isCompleted: shouldBeCompleted };
-            // 재귀적으로 상위 부모도 업데이트
-            updateParentChain(parent.id);
-          }
-        };
-        updateParentChain(itemId);
-
-        // 모든 기간에서 해당 항목 업데이트
-        const updatedPeriods = { ...state.periods };
-
-        Object.keys(updatedPeriods).forEach((periodId) => {
-          const p = updatedPeriods[periodId];
-          if (!p) return;
-
-          let needsUpdate = false;
-          const updatedP = { ...p };
-
-          // 업데이트 함수: allItems의 상태를 반영
-          const syncFromAllItems = (item: Item): Item => {
-            const latest = newAllItems[item.id];
-            if (latest && latest.isCompleted !== item.isCompleted) {
-              return { ...item, isCompleted: latest.isCompleted };
-            }
-            return item;
-          };
-
-          // todos 동기화
-          const syncedTodos = p.todos.map(syncFromAllItems);
-          if (JSON.stringify(syncedTodos) !== JSON.stringify(p.todos)) {
-            updatedP.todos = syncedTodos;
-            needsUpdate = true;
-          }
-
-          // routines 동기화
-          const syncedRoutines = p.routines.map(syncFromAllItems);
-          if (JSON.stringify(syncedRoutines) !== JSON.stringify(p.routines)) {
-            updatedP.routines = syncedRoutines;
-            needsUpdate = true;
-          }
-
-          // slots 동기화
-          const syncedSlots: Record<string, Item[]> = {};
-          let slotsChanged = false;
-          Object.keys(p.slots).forEach((slotKey) => {
-            const syncedSlot = p.slots[slotKey].map(syncFromAllItems);
-            syncedSlots[slotKey] = syncedSlot;
-            if (JSON.stringify(syncedSlot) !== JSON.stringify(p.slots[slotKey])) {
-              slotsChanged = true;
-            }
-          });
-          if (slotsChanged) {
-            updatedP.slots = syncedSlots;
-            needsUpdate = true;
-          }
-
-          // timeSlots 동기화
-          if (p.timeSlots) {
-            const syncedTimeSlots: Record<TimeSlot, Item[]> = {
-              dawn: [],
-              morning_early: [],
-              morning_late: [],
-              afternoon_early: [],
-              afternoon_late: [],
-              evening_early: [],
-              evening_late: [],
-              anytime: [],
-            };
-            let timeSlotsChanged = false;
-            (Object.keys(p.timeSlots) as TimeSlot[]).forEach((ts) => {
-              const syncedSlot = (p.timeSlots![ts] || []).map(syncFromAllItems);
-              syncedTimeSlots[ts] = syncedSlot;
-              if (JSON.stringify(syncedSlot) !== JSON.stringify(p.timeSlots![ts])) {
-                timeSlotsChanged = true;
-              }
-            });
-            if (timeSlotsChanged) {
-              updatedP.timeSlots = syncedTimeSlots;
-              needsUpdate = true;
-            }
-          }
-
-          if (needsUpdate) {
-            updatedPeriods[periodId] = updatedP;
-          }
-        });
-
-        set({
-          periods: updatedPeriods,
-          allItems: newAllItems,
-        });
-      },
-
-      getProgress: (itemId) => {
-        const state = get();
-        const item = state.allItems[itemId];
-
-        if (!item) return 0;
-        if (!item.childIds || item.childIds.length === 0) {
-          return item.isCompleted ? 100 : 0;
-        }
-
-        const completedCount = item.childIds.filter(
-          (cid) => state.allItems[cid]?.isCompleted
-        ).length;
-
-        return Math.round((completedCount / item.childIds.length) * 100);
-      },
-
-      ensurePeriod: (periodId) => {
-        const state = get();
-        if (state.periods[periodId]) {
-          return state.periods[periodId];
-        }
-
-        const parsed = parsePeriodId(periodId);
-        const newPeriod = createEmptyPeriod(periodId, parsed.level);
-
-        set({
-          periods: { ...state.periods, [periodId]: newPeriod },
-        });
-
-        return newPeriod;
-      },
-
-      getCurrentPeriod: () => {
-        const state = get();
-        return state.ensurePeriod(state.currentPeriodId);
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 루틴 자동 리셋
-      // ═══════════════════════════════════════════════════════════
-      resetRoutinesIfNeeded: (periodId: string) => {
-        const state = get();
-        const period = state.periods[periodId];
-        if (!period) return;
+      };
+      collectChildIds(itemId);
+
+      // 모든 기간에서 관련 항목 삭제
+      const updatedPeriods = { ...state.periods };
+
+      Object.keys(updatedPeriods).forEach((periodId) => {
+        const p = updatedPeriods[periodId];
+        if (!p) return;
 
         let needsUpdate = false;
-        const updatedRoutines = period.routines.map((routine) => {
-          // 리셋 대상이 아닌 경우 (targetCount 없음)
-          if (routine.targetCount === undefined) return routine;
+        const updatedP = { ...p };
 
-          // 출처 레벨 확인
-          const sourceLevel = routine.sourceLevel || routine.originPeriodId
-            ? parsePeriodId(routine.originPeriodId || periodId).level
-            : period.level;
-
-          // 현재 리셋 키 계산
-          const currentResetKey = getResetKey(periodId, sourceLevel);
-
-          // 이전 리셋 키와 비교
-          if (routine.lastResetDate === currentResetKey) {
-            // 같은 리셋 주기면 리셋하지 않음
-            return routine;
-          }
-
-          // 리셋 필요!
+        // todos에서 삭제
+        const filteredTodos = p.todos.filter((i) => !idsToDelete.has(i.id));
+        if (filteredTodos.length !== p.todos.length) {
+          updatedP.todos = filteredTodos;
           needsUpdate = true;
-          return {
-            ...routine,
-            currentCount: routine.targetCount,
-            lastResetDate: currentResetKey,
-          };
+        }
+
+        // routines에서 삭제
+        const filteredRoutines = p.routines.filter((i) => !idsToDelete.has(i.id));
+        if (filteredRoutines.length !== p.routines.length) {
+          updatedP.routines = filteredRoutines;
+          needsUpdate = true;
+        }
+
+        // slots에서 삭제
+        const updatedSlots: Record<string, Item[]> = {};
+        let slotsChanged = false;
+        Object.keys(p.slots).forEach((slotKey) => {
+          const filtered = p.slots[slotKey].filter((i) => !idsToDelete.has(i.id));
+          updatedSlots[slotKey] = filtered;
+          if (filtered.length !== p.slots[slotKey].length) {
+            slotsChanged = true;
+          }
         });
+        if (slotsChanged) {
+          updatedP.slots = updatedSlots;
+          needsUpdate = true;
+        }
+
+        // timeSlots에서 삭제 (일 뷰)
+        if (p.timeSlots) {
+          const updatedTimeSlots: Record<TimeSlot, Item[]> = {
+            dawn: [],
+            morning_early: [],
+            morning_late: [],
+            afternoon_early: [],
+            afternoon_late: [],
+            evening_early: [],
+            evening_late: [],
+            anytime: [],
+          };
+          let timeSlotsChanged = false;
+          (Object.keys(p.timeSlots) as TimeSlot[]).forEach((ts) => {
+            const filtered = (p.timeSlots![ts] || []).filter((i) => !idsToDelete.has(i.id));
+            updatedTimeSlots[ts] = filtered;
+            if (filtered.length !== (p.timeSlots![ts] || []).length) {
+              timeSlotsChanged = true;
+            }
+          });
+          if (timeSlotsChanged) {
+            updatedP.timeSlots = updatedTimeSlots;
+            needsUpdate = true;
+          }
+        }
 
         if (needsUpdate) {
-          set({
-            periods: {
-              ...state.periods,
-              [periodId]: {
-                ...period,
-                routines: updatedRoutines,
-              },
-            },
-          });
+          updatedPeriods[periodId] = updatedP;
         }
-      },
+      });
 
-      // ═══════════════════════════════════════════════════════════
-      // 클라우드 동기화용 직접 setter
-      // ═══════════════════════════════════════════════════════════
-      setPeriods: (periods: Record<string, Period>) => {
-        set({ periods });
-      },
+      // allItems에서 삭제 및 부모 관계 정리
+      const newAllItems = { ...state.allItems };
+      const item = newAllItems[itemId];
+      let parentIdToUpdate: string | null = null;
 
-      setRecords: (records: Record<string, DailyRecord>) => {
-        set({ records });
-      },
-
-      // ═══════════════════════════════════════════════════════════
-      // 기록 (Record) 관련 액션
-      // ═══════════════════════════════════════════════════════════
-      getRecord: (periodId: string) => {
-        const state = get();
-        return state.records[periodId] || null;
-      },
-
-      updateRecordContent: (periodId: string, content: string) => {
-        const state = get();
-        const now = new Date().toISOString();
-        const existing = state.records[periodId];
-
-        const updated: DailyRecord = existing
-          ? { ...existing, content, updatedAt: now }
-          : {
-            id: genId(),
-            periodId,
-            content,
-            highlights: [],
-            gratitude: [],
-            createdAt: now,
-            updatedAt: now,
+      // 부모의 childIds에서 제거
+      if (item?.parentId) {
+        const parent = newAllItems[item.parentId];
+        if (parent?.childIds) {
+          parentIdToUpdate = item.parentId;
+          newAllItems[item.parentId] = {
+            ...parent,
+            childIds: parent.childIds.filter((id) => id !== itemId),
           };
+        }
+      }
 
-        set({
-          records: { ...state.records, [periodId]: updated },
+      // 모든 관련 항목 삭제
+      idsToDelete.forEach((id) => {
+        delete newAllItems[id];
+      });
+
+      // 부모의 childIds 변경을 모든 기간에 동기화
+      if (parentIdToUpdate) {
+        const updatedParent = newAllItems[parentIdToUpdate];
+        Object.keys(updatedPeriods).forEach((periodId) => {
+          const p = updatedPeriods[periodId];
+          if (!p) return;
+
+          const updatedP = { ...p };
+          let needsParentSync = false;
+
+          // todos에서 부모 업데이트
+          const parentInTodos = p.todos.findIndex((i) => i.id === parentIdToUpdate);
+          if (parentInTodos !== -1) {
+            updatedP.todos = p.todos.map((i) =>
+              i.id === parentIdToUpdate ? { ...i, childIds: updatedParent.childIds } : i
+            );
+            needsParentSync = true;
+          }
+
+          // routines에서 부모 업데이트
+          const parentInRoutines = p.routines.findIndex((i) => i.id === parentIdToUpdate);
+          if (parentInRoutines !== -1) {
+            updatedP.routines = p.routines.map((i) =>
+              i.id === parentIdToUpdate ? { ...i, childIds: updatedParent.childIds } : i
+            );
+            needsParentSync = true;
+          }
+
+          if (needsParentSync) {
+            updatedPeriods[periodId] = updatedP;
+          }
         });
-      },
+      }
 
-      updateRecordMood: (periodId: string, mood: Mood | undefined) => {
-        const state = get();
-        const now = new Date().toISOString();
-        const existing = state.records[periodId];
+      set({
+        periods: updatedPeriods,
+        allItems: newAllItems,
+      });
+    },
 
-        const updated: DailyRecord = existing
-          ? { ...existing, mood, updatedAt: now }
-          : {
-            id: genId(),
-            periodId,
-            content: '',
-            mood,
-            highlights: [],
-            gratitude: [],
-            createdAt: now,
-            updatedAt: now,
+    updateItemContent: (itemId, content, location, slotId) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
+
+      const updater = (item: Item): Item =>
+        item.id === itemId ? { ...item, content } : item;
+
+      const updatedPeriod = { ...period };
+
+      if (location === 'todo') {
+        updatedPeriod.todos = period.todos.map(updater);
+      } else if (location === 'routine') {
+        updatedPeriod.routines = period.routines.map(updater);
+      } else if (location === 'slot' && slotId) {
+        // 시간대 슬롯 체크
+        const parsedTimeSlot = parseTimeSlotId(slotId);
+        if (parsedTimeSlot && period.timeSlots) {
+          const { timeSlot } = parsedTimeSlot;
+          updatedPeriod.timeSlots = {
+            ...period.timeSlots,
+            [timeSlot]: (period.timeSlots[timeSlot] || []).map(updater),
           };
-
-        set({
-          records: { ...state.records, [periodId]: updated },
-        });
-      },
-
-      addHighlight: (periodId: string, text: string) => {
-        const state = get();
-        const now = new Date().toISOString();
-        const existing = state.records[periodId];
-
-        const updated: DailyRecord = existing
-          ? { ...existing, highlights: [...existing.highlights, text], updatedAt: now }
-          : {
-            id: genId(),
-            periodId,
-            content: '',
-            highlights: [text],
-            gratitude: [],
-            createdAt: now,
-            updatedAt: now,
+        } else {
+          updatedPeriod.slots = {
+            ...period.slots,
+            [slotId]: (period.slots[slotId] || []).map(updater),
           };
+        }
+      }
 
-        set({
-          records: { ...state.records, [periodId]: updated },
-        });
-      },
+      // allItems도 업데이트
+      const newAllItems = { ...state.allItems };
+      if (newAllItems[itemId]) {
+        newAllItems[itemId] = { ...newAllItems[itemId], content };
+      }
 
-      removeHighlight: (periodId: string, index: number) => {
-        const state = get();
-        const existing = state.records[periodId];
-        if (!existing) return;
+      set({
+        periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+        allItems: newAllItems,
+      });
+    },
 
-        const newHighlights = [...existing.highlights];
-        newHighlights.splice(index, 1);
+    updateItemColor: (itemId, color, location, slotId) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
 
-        set({
-          records: {
-            ...state.records,
-            [periodId]: {
-              ...existing,
-              highlights: newHighlights,
-              updatedAt: new Date().toISOString(),
-            },
-          },
-        });
-      },
+      const colorizer = (item: Item): Item =>
+        item.id === itemId ? { ...item, color } : item;
 
-      addGratitude: (periodId: string, text: string) => {
-        const state = get();
-        const now = new Date().toISOString();
-        const existing = state.records[periodId];
+      const updatedPeriod = { ...period };
 
-        const updated: DailyRecord = existing
-          ? { ...existing, gratitude: [...existing.gratitude, text], updatedAt: now }
-          : {
-            id: genId(),
-            periodId,
-            content: '',
-            highlights: [],
-            gratitude: [text],
-            createdAt: now,
-            updatedAt: now,
+      if (location === 'todo') {
+        updatedPeriod.todos = period.todos.map(colorizer);
+      } else if (location === 'routine') {
+        updatedPeriod.routines = period.routines.map(colorizer);
+      } else if (location === 'slot' && slotId) {
+        // 시간대 슬롯 체크
+        const parsedTimeSlot = parseTimeSlotId(slotId);
+        if (parsedTimeSlot && period.timeSlots) {
+          const { timeSlot } = parsedTimeSlot;
+          updatedPeriod.timeSlots = {
+            ...period.timeSlots,
+            [timeSlot]: (period.timeSlots[timeSlot] || []).map(colorizer),
           };
+        } else {
+          updatedPeriod.slots = {
+            ...period.slots,
+            [slotId]: (period.slots[slotId] || []).map(colorizer),
+          };
+        }
+      }
 
-        set({
-          records: { ...state.records, [periodId]: updated },
-        });
-      },
+      set({
+        periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+      });
+    },
 
-      removeGratitude: (periodId: string, index: number) => {
-        const state = get();
-        const existing = state.records[periodId];
-        if (!existing) return;
+    updateItemNote: (itemId, note, location, slotId) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
 
-        const newGratitude = [...existing.gratitude];
-        newGratitude.splice(index, 1);
+      const updater = (item: Item): Item =>
+        item.id === itemId ? { ...item, note } : item;
 
-        set({
-          records: {
-            ...state.records,
-            [periodId]: {
-              ...existing,
-              gratitude: newGratitude,
-              updatedAt: new Date().toISOString(),
-            },
-          },
-        });
-      },
+      const updatedPeriod = { ...period };
 
-      // ═══════════════════════════════════════════════════════════════
-      // 연간 기념일 CRUD
-      // ═══════════════════════════════════════════════════════════════
-      addAnnualEvent: (event) => {
-        const newEvent: AnnualEvent = {
-          ...event,
-          id: genId(),
-          createdAt: new Date().toISOString(),
+      if (location === 'todo') {
+        updatedPeriod.todos = period.todos.map(updater);
+      } else if (location === 'routine') {
+        updatedPeriod.routines = period.routines.map(updater);
+      } else if (location === 'slot' && slotId) {
+        // 시간대 슬롯 체크
+        const parsedTimeSlot = parseTimeSlotId(slotId);
+        if (parsedTimeSlot && period.timeSlots) {
+          const { timeSlot } = parsedTimeSlot;
+          updatedPeriod.timeSlots = {
+            ...period.timeSlots,
+            [timeSlot]: (period.timeSlots[timeSlot] || []).map(updater),
+          };
+        } else {
+          updatedPeriod.slots = {
+            ...period.slots,
+            [slotId]: (period.slots[slotId] || []).map(updater),
+          };
+        }
+      }
+
+      // allItems도 업데이트
+      const newAllItems = { ...state.allItems };
+      if (newAllItems[itemId]) {
+        newAllItems[itemId] = { ...newAllItems[itemId], note };
+      }
+
+      set({
+        periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+        allItems: newAllItems,
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 핵심: 슬롯 배정 (쪼개기)
+    // ═══════════════════════════════════════════════════════════
+    assignToSlot: (itemId, from, targetSlotId, subContent) => {
+      const { currentPeriodId, currentLevel, ensurePeriod } = get();
+      const period = ensurePeriod(currentPeriodId);
+
+      // ensurePeriod 후 fresh state 사용
+      const freshState = get();
+
+      // 원본 아이템 찾기
+      const sourceList = from === 'todo' ? period.todos : period.routines;
+      const originalItem = sourceList.find((i) => i.id === itemId);
+      if (!originalItem) return;
+
+      // 새 아이템 생성 (부모 연결)
+      // subContent가 있으면 "원본: 세부내용" 형식으로 표시
+      const displayContent = subContent
+        ? `${originalItem.content}: ${subContent}`
+        : originalItem.content;
+
+      const newItem: Item = {
+        id: genId(),
+        content: displayContent,
+        isCompleted: false,
+        color: originalItem.color,
+        category: originalItem.category,  // 루틴 카테고리 복사
+        todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
+        parentId: originalItem.id,
+        originPeriodId: currentPeriodId,
+        subContent: subContent,
+        // 출처 정보 저장
+        sourceLevel: currentLevel,
+        sourceType: from,
+      };
+
+      // 부모에 자식 ID 추가
+      const updatedOriginal: Item = {
+        ...originalItem,
+        childIds: [...(originalItem.childIds || []), newItem.id],
+      };
+
+      // 기간 업데이트
+      const updatedPeriod = { ...period };
+
+      // 원본 리스트 업데이트
+      if (from === 'todo') {
+        updatedPeriod.todos = period.todos.map((i) =>
+          i.id === itemId ? updatedOriginal : i
+        );
+      } else {
+        // 루틴: targetCount가 있는 경우 카운트 감소 (0이 되어도 유지)
+        if (originalItem.targetCount !== undefined) {
+          const newCount = (originalItem.currentCount ?? originalItem.targetCount) - 1;
+          const updatedRoutine: Item = {
+            ...updatedOriginal,
+            currentCount: Math.max(0, newCount),
+          };
+          // 카운트가 0이 되어도 부모는 유지 (진행률 표시용)
+          updatedPeriod.routines = period.routines.map((i) =>
+            i.id === itemId ? updatedRoutine : i
+          );
+        } else {
+          // targetCount가 없으면 할일처럼 그냥 유지
+          updatedPeriod.routines = period.routines.map((i) =>
+            i.id === itemId ? updatedOriginal : i
+          );
+        }
+      }
+
+      // 슬롯에 추가
+      const slotItems = period.slots[targetSlotId] || [];
+      updatedPeriod.slots = {
+        ...period.slots,
+        [targetSlotId]: [...slotItems, newItem],
+      };
+
+      // 하위 기간에도 할일로 추가 (전파!)
+      const updatedPeriods = { ...freshState.periods, [currentPeriodId]: updatedPeriod };
+
+      // 하위 기간 확보 및 할일 추가
+      const childPeriod = freshState.periods[targetSlotId] || createEmptyPeriod(targetSlotId, LEVEL_CONFIG[currentLevel].childLevel!);
+      const propagatedItem: Item = {
+        ...newItem,
+        id: genId(), // 새 ID
+        parentId: newItem.id, // 슬롯 아이템이 부모
+        category: originalItem.category,  // 루틴 카테고리 복사
+        todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
+      };
+
+      // 슬롯 아이템에 전파된 아이템을 자식으로 추가 (체인 연결)
+      const newItemWithChild: Item = {
+        ...newItem,
+        childIds: [propagatedItem.id],
+      };
+
+      // 슬롯의 아이템도 업데이트
+      updatedPeriod.slots = {
+        ...updatedPeriod.slots,
+        [targetSlotId]: updatedPeriod.slots[targetSlotId].map(item =>
+          item.id === newItem.id ? newItemWithChild : item
+        ),
+      };
+      updatedPeriods[currentPeriodId] = updatedPeriod;
+
+      updatedPeriods[targetSlotId] = {
+        ...childPeriod,
+        todos: [...childPeriod.todos, propagatedItem],
+      };
+
+      set({
+        periods: updatedPeriods,
+        allItems: {
+          ...freshState.allItems,
+          [newItem.id]: newItemWithChild,  // 자식 ID 포함된 버전 저장
+          [propagatedItem.id]: propagatedItem,
+          [updatedOriginal.id]: updatedOriginal,
+        },
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 시간대 슬롯 배정 (일 뷰 전용)
+    // ═══════════════════════════════════════════════════════════
+    assignToTimeSlot: (itemId, from, timeSlot, subContent) => {
+      const { currentPeriodId, currentLevel, ensurePeriod } = get();
+
+      // DAY 레벨에서만 작동
+      if (currentLevel !== 'DAY') return;
+
+      const period = ensurePeriod(currentPeriodId);
+      const freshState = get();
+
+      // 원본 아이템 찾기
+      const sourceList = from === 'todo' ? period.todos : period.routines;
+      const originalItem = sourceList.find((i) => i.id === itemId);
+      if (!originalItem) return;
+
+      // subContent가 있으면 "원본: 세부내용" 형식으로 표시
+      const displayContent = subContent
+        ? `${originalItem.content}: ${subContent}`
+        : originalItem.content;
+
+      // 시간대 슬롯용 새 아이템 생성
+      const newItem: Item = {
+        id: genId(),
+        content: displayContent,
+        isCompleted: false,
+        color: originalItem.color,
+        category: originalItem.category,  // 루틴 카테고리 복사
+        todoCategory: originalItem.todoCategory,  // 할일 카테고리 복사
+        subContent: subContent,
+        // 출처 정보 (원본의 출처 유지 또는 현재 레벨)
+        sourceLevel: originalItem.sourceLevel || currentLevel,
+        sourceType: originalItem.sourceType || from,
+        parentId: originalItem.id,
+        originPeriodId: currentPeriodId,
+      };
+
+      // 부모에 자식 ID 추가
+      const updatedOriginal: Item = {
+        ...originalItem,
+        childIds: [...(originalItem.childIds || []), newItem.id],
+      };
+
+      // 기간 업데이트
+      const updatedPeriod = { ...period };
+
+      // timeSlots 초기화 (없을 경우)
+      if (!updatedPeriod.timeSlots) {
+        updatedPeriod.timeSlots = {
+          dawn: [],
+          morning_early: [],
+          morning_late: [],
+          afternoon_early: [],
+          afternoon_late: [],
+          evening_early: [],
+          evening_late: [],
+          anytime: [],
         };
-        set({ annualEvents: [...get().annualEvents, newEvent] });
-      },
+      }
 
-      updateAnnualEvent: (id, updates) => {
-        set({
-          annualEvents: get().annualEvents.map((e) =>
-            e.id === id ? { ...e, ...updates } : e
-          ),
+      // 원본 리스트 업데이트
+      if (from === 'todo') {
+        updatedPeriod.todos = period.todos.map((i) =>
+          i.id === itemId ? updatedOriginal : i
+        );
+      } else {
+        // 루틴: targetCount가 있는 경우 카운트 감소 (0이 되어도 유지)
+        if (originalItem.targetCount !== undefined) {
+          const newCount = (originalItem.currentCount ?? originalItem.targetCount) - 1;
+          const updatedRoutine: Item = {
+            ...updatedOriginal,
+            currentCount: Math.max(0, newCount),
+          };
+          // 카운트가 0이 되어도 부모는 유지 (진행률 표시용)
+          updatedPeriod.routines = period.routines.map((i) =>
+            i.id === itemId ? updatedRoutine : i
+          );
+        } else {
+          updatedPeriod.routines = period.routines.map((i) =>
+            i.id === itemId ? updatedOriginal : i
+          );
+        }
+      }
+
+      // 시간대 슬롯에 추가
+      const slotItems = updatedPeriod.timeSlots[timeSlot] || [];
+      updatedPeriod.timeSlots = {
+        ...updatedPeriod.timeSlots,
+        [timeSlot]: [...slotItems, newItem],
+      };
+
+      set({
+        periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
+        allItems: {
+          ...freshState.allItems,
+          [newItem.id]: newItem,
+          [updatedOriginal.id]: updatedOriginal,
+        },
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 슬롯 간 아이템 이동
+    // ═══════════════════════════════════════════════════════════
+    moveSlotItem: (itemId, fromSlotId, toSlotId) => {
+      const { currentPeriodId, ensurePeriod } = get();
+      const period = ensurePeriod(currentPeriodId);
+      const freshState = get();
+
+      // 동일 슬롯이면 무시
+      if (fromSlotId === toSlotId) return;
+
+      // 원본 슬롯에서 아이템 찾기
+      const fromItems = period.slots[fromSlotId] || [];
+      const itemToMove = fromItems.find((i) => i.id === itemId);
+      if (!itemToMove) return;
+
+      // 원본 슬롯에서 제거
+      const updatedFromItems = fromItems.filter((i) => i.id !== itemId);
+
+      // 대상 슬롯에 추가
+      const toItems = period.slots[toSlotId] || [];
+      const updatedToItems = [...toItems, itemToMove];
+
+      // 기간 업데이트
+      const updatedPeriod = {
+        ...period,
+        slots: {
+          ...period.slots,
+          [fromSlotId]: updatedFromItems,
+          [toSlotId]: updatedToItems,
+        },
+      };
+
+      set({
+        periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 시간대 슬롯 간 아이템 이동
+    // ═══════════════════════════════════════════════════════════
+    moveTimeSlotItem: (itemId, fromSlotId, toSlotId) => {
+      const { currentPeriodId, ensurePeriod, currentLevel } = get();
+
+      // DAY 레벨에서만 작동
+      if (currentLevel !== 'DAY') return;
+
+      const period = ensurePeriod(currentPeriodId);
+      const freshState = get();
+
+      // 동일 슬롯이면 무시
+      if (fromSlotId === toSlotId) return;
+
+      // 시간대 슬롯 ID에서 TimeSlot 추출 (ts-d-2025-01-10-morning_early -> morning_early)
+      const fromParts = fromSlotId.split('-');
+      const fromTimeSlot = fromParts[fromParts.length - 1] as TimeSlot;
+      const toParts = toSlotId.split('-');
+      const toTimeSlot = toParts[toParts.length - 1] as TimeSlot;
+
+      if (!period.timeSlots) return;
+
+      // 원본 슬롯에서 아이템 찾기
+      const fromItems = period.timeSlots[fromTimeSlot] || [];
+      const itemToMove = fromItems.find((i) => i.id === itemId);
+      if (!itemToMove) return;
+
+      // 원본 슬롯에서 제거
+      const updatedFromItems = fromItems.filter((i) => i.id !== itemId);
+
+      // 대상 슬롯에 추가
+      const toItems = period.timeSlots[toTimeSlot] || [];
+      const updatedToItems = [...toItems, itemToMove];
+
+      // 기간 업데이트
+      const updatedPeriod = {
+        ...period,
+        timeSlots: {
+          ...period.timeSlots,
+          [fromTimeSlot]: updatedFromItems,
+          [toTimeSlot]: updatedToItems,
+        },
+      };
+
+      set({
+        periods: { ...freshState.periods, [currentPeriodId]: updatedPeriod },
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 쪼개기: 하위 항목 추가
+    // ═══════════════════════════════════════════════════════════
+    addSubItem: (parentId, content, location) => {
+      const state = get();
+      const { currentPeriodId, currentLevel } = state;
+      const period = state.periods[currentPeriodId];
+      if (!period) return;
+
+      const sourceList = location === 'todo' ? period.todos : period.routines;
+      const parentItem = sourceList.find((i) => i.id === parentId);
+      if (!parentItem) return;
+
+      // 새 하위 항목 생성 (부모의 카테고리 상속)
+      const newItem: Item = {
+        id: genId(),
+        content,
+        isCompleted: false,
+        color: parentItem.color,
+        category: parentItem.category, // 루틴 카테고리 상속
+        todoCategory: parentItem.todoCategory, // 할일 카테고리 상속
+        parentId: parentId,
+        originPeriodId: currentPeriodId,
+        sourceLevel: currentLevel,
+        sourceType: location === 'routine' ? 'routine' : 'todo',
+      };
+
+      // 부모 아이템 업데이트 (childIds에 추가, 펼치기)
+      const updatedParent: Item = {
+        ...parentItem,
+        childIds: [...(parentItem.childIds || []), newItem.id],
+        isExpanded: true,
+      };
+
+      // 리스트 업데이트
+      const updatedPeriod = { ...period };
+      if (location === 'todo') {
+        // 부모 업데이트 + 새 항목 추가 (부모 바로 뒤에)
+        const parentIndex = period.todos.findIndex((i) => i.id === parentId);
+        const newTodos = [...period.todos];
+        newTodos[parentIndex] = updatedParent;
+        // 부모의 마지막 자식 뒤에 삽입
+        let insertIndex = parentIndex + 1;
+        for (let i = parentIndex + 1; i < newTodos.length; i++) {
+          if (newTodos[i].parentId === parentId) {
+            insertIndex = i + 1;
+          } else if (!newTodos[i].parentId || newTodos[i].parentId !== parentId) {
+            break;
+          }
+        }
+        newTodos.splice(insertIndex, 0, newItem);
+        updatedPeriod.todos = newTodos;
+      } else {
+        const parentIndex = period.routines.findIndex((i) => i.id === parentId);
+        const newRoutines = [...period.routines];
+        newRoutines[parentIndex] = updatedParent;
+        let insertIndex = parentIndex + 1;
+        for (let i = parentIndex + 1; i < newRoutines.length; i++) {
+          if (newRoutines[i].parentId === parentId) {
+            insertIndex = i + 1;
+          } else if (!newRoutines[i].parentId || newRoutines[i].parentId !== parentId) {
+            break;
+          }
+        }
+        newRoutines.splice(insertIndex, 0, newItem);
+        updatedPeriod.routines = newRoutines;
+      }
+
+      set({
+        periods: { ...state.periods, [currentPeriodId]: updatedPeriod },
+        allItems: {
+          ...state.allItems,
+          [newItem.id]: newItem,
+          [updatedParent.id]: updatedParent,
+        },
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 접기/펼치기 토글
+    // ═══════════════════════════════════════════════════════════
+    toggleExpand: (itemId, location) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
+
+      const toggler = (item: Item): Item =>
+        item.id === itemId ? { ...item, isExpanded: !item.isExpanded } : item;
+
+      const updatedPeriod = { ...period };
+      if (location === 'todo') {
+        updatedPeriod.todos = period.todos.map(toggler);
+      } else {
+        updatedPeriod.routines = period.routines.map(toggler);
+      }
+
+      set({
+        periods: { ...state.periods, [state.currentPeriodId]: updatedPeriod },
+      });
+    },
+
+    toggleComplete: (itemId, location, slotId) => {
+      const state = get();
+      const period = state.periods[state.currentPeriodId];
+      if (!period) return;
+
+      // allItems 먼저 업데이트
+      const newAllItems = { ...state.allItems };
+      const targetItem = newAllItems[itemId];
+      if (!targetItem) return;
+
+      const newCompletedState = !targetItem.isCompleted;
+      newAllItems[itemId] = { ...targetItem, isCompleted: newCompletedState };
+
+      // 자식들도 같은 상태로 변경 (하위 전파)
+      const updateChildrenRecursive = (parentId: string, completed: boolean) => {
+        const parent = newAllItems[parentId];
+        if (!parent?.childIds) return;
+
+        parent.childIds.forEach((childId) => {
+          const child = newAllItems[childId];
+          if (child) {
+            newAllItems[childId] = { ...child, isCompleted: completed };
+            // 재귀적으로 손자들도 업데이트
+            updateChildrenRecursive(childId, completed);
+          }
         });
-      },
+      };
+      updateChildrenRecursive(itemId, newCompletedState);
 
-      deleteAnnualEvent: (id) => {
-        set({
-          annualEvents: get().annualEvents.filter((e) => e.id !== id),
+      // 부모 체인 업데이트 (자식 완료 시 부모 진행률 체크)
+      const updateParentChain = (childId: string) => {
+        const child = newAllItems[childId];
+        if (!child?.parentId) return;
+
+        const parent = newAllItems[child.parentId];
+        if (!parent?.childIds || parent.childIds.length === 0) return;
+
+        // 부모의 진행률 계산
+        const completedCount = parent.childIds.filter(
+          (cid) => newAllItems[cid]?.isCompleted
+        ).length;
+        const progress = Math.round((completedCount / parent.childIds.length) * 100);
+
+        // 100%면 부모도 완료, 아니면 미완료
+        const shouldBeCompleted = progress === 100;
+        if (parent.isCompleted !== shouldBeCompleted) {
+          newAllItems[parent.id] = { ...parent, isCompleted: shouldBeCompleted };
+          // 재귀적으로 상위 부모도 업데이트
+          updateParentChain(parent.id);
+        }
+      };
+      updateParentChain(itemId);
+
+      // 모든 기간에서 해당 항목 업데이트
+      const updatedPeriods = { ...state.periods };
+
+      Object.keys(updatedPeriods).forEach((periodId) => {
+        const p = updatedPeriods[periodId];
+        if (!p) return;
+
+        let needsUpdate = false;
+        const updatedP = { ...p };
+
+        // 업데이트 함수: allItems의 상태를 반영
+        const syncFromAllItems = (item: Item): Item => {
+          const latest = newAllItems[item.id];
+          if (latest && latest.isCompleted !== item.isCompleted) {
+            return { ...item, isCompleted: latest.isCompleted };
+          }
+          return item;
+        };
+
+        // todos 동기화
+        const syncedTodos = p.todos.map(syncFromAllItems);
+        if (JSON.stringify(syncedTodos) !== JSON.stringify(p.todos)) {
+          updatedP.todos = syncedTodos;
+          needsUpdate = true;
+        }
+
+        // routines 동기화
+        const syncedRoutines = p.routines.map(syncFromAllItems);
+        if (JSON.stringify(syncedRoutines) !== JSON.stringify(p.routines)) {
+          updatedP.routines = syncedRoutines;
+          needsUpdate = true;
+        }
+
+        // slots 동기화
+        const syncedSlots: Record<string, Item[]> = {};
+        let slotsChanged = false;
+        Object.keys(p.slots).forEach((slotKey) => {
+          const syncedSlot = p.slots[slotKey].map(syncFromAllItems);
+          syncedSlots[slotKey] = syncedSlot;
+          if (JSON.stringify(syncedSlot) !== JSON.stringify(p.slots[slotKey])) {
+            slotsChanged = true;
+          }
         });
-      },
+        if (slotsChanged) {
+          updatedP.slots = syncedSlots;
+          needsUpdate = true;
+        }
 
-      getUpcomingEvents: (days = 30) => {
-        const events = get().annualEvents;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        return events
-          .map((event) => {
-            // 올해 날짜로 계산
-            let nextDate = new Date(today.getFullYear(), event.month - 1, event.day);
-
-            // 이미 지났으면 내년으로
-            if (nextDate < today) {
-              nextDate = new Date(today.getFullYear() + 1, event.month - 1, event.day);
+        // timeSlots 동기화
+        if (p.timeSlots) {
+          const syncedTimeSlots: Record<TimeSlot, Item[]> = {
+            dawn: [],
+            morning_early: [],
+            morning_late: [],
+            afternoon_early: [],
+            afternoon_late: [],
+            evening_early: [],
+            evening_late: [],
+            anytime: [],
+          };
+          let timeSlotsChanged = false;
+          (Object.keys(p.timeSlots) as TimeSlot[]).forEach((ts) => {
+            const syncedSlot = (p.timeSlots![ts] || []).map(syncFromAllItems);
+            syncedTimeSlots[ts] = syncedSlot;
+            if (JSON.stringify(syncedSlot) !== JSON.stringify(p.timeSlots![ts])) {
+              timeSlotsChanged = true;
             }
+          });
+          if (timeSlotsChanged) {
+            updatedP.timeSlots = syncedTimeSlots;
+            needsUpdate = true;
+          }
+        }
 
-            const daysUntil = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (needsUpdate) {
+          updatedPeriods[periodId] = updatedP;
+        }
+      });
 
-            return { ...event, daysUntil, nextDate };
-          })
-          .filter((e) => e.daysUntil <= days)
-          .sort((a, b) => a.daysUntil - b.daysUntil);
-      },
-    }),
-    {
-      name: 'life-planner-storage',
-      partialize: (state) => ({
-        baseYear: state.baseYear,
+      set({
+        periods: updatedPeriods,
+        allItems: newAllItems,
+      });
+    },
+
+    getProgress: (itemId) => {
+      const state = get();
+      const item = state.allItems[itemId];
+
+      if (!item) return 0;
+      if (!item.childIds || item.childIds.length === 0) {
+        return item.isCompleted ? 100 : 0;
+      }
+
+      const completedCount = item.childIds.filter(
+        (cid) => state.allItems[cid]?.isCompleted
+      ).length;
+
+      return Math.round((completedCount / item.childIds.length) * 100);
+    },
+
+    ensurePeriod: (periodId) => {
+      const state = get();
+      if (state.periods[periodId]) {
+        return state.periods[periodId];
+      }
+
+      const parsed = parsePeriodId(periodId);
+      const newPeriod = createEmptyPeriod(periodId, parsed.level);
+
+      set({
+        periods: { ...state.periods, [periodId]: newPeriod },
+      });
+
+      return newPeriod;
+    },
+
+    getCurrentPeriod: () => {
+      const state = get();
+      return state.ensurePeriod(state.currentPeriodId);
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 루틴 자동 리셋
+    // ═══════════════════════════════════════════════════════════
+    resetRoutinesIfNeeded: (periodId: string) => {
+      const state = get();
+      const period = state.periods[periodId];
+      if (!period) return;
+
+      let needsUpdate = false;
+      const updatedRoutines = period.routines.map((routine) => {
+        // 리셋 대상이 아닌 경우 (targetCount 없음)
+        if (routine.targetCount === undefined) return routine;
+
+        // 출처 레벨 확인
+        const sourceLevel = routine.sourceLevel || routine.originPeriodId
+          ? parsePeriodId(routine.originPeriodId || periodId).level
+          : period.level;
+
+        // 현재 리셋 키 계산
+        const currentResetKey = getResetKey(periodId, sourceLevel);
+
+        // 이전 리셋 키와 비교
+        if (routine.lastResetDate === currentResetKey) {
+          // 같은 리셋 주기면 리셋하지 않음
+          return routine;
+        }
+
+        // 리셋 필요!
+        needsUpdate = true;
+        return {
+          ...routine,
+          currentCount: routine.targetCount,
+          lastResetDate: currentResetKey,
+        };
+      });
+
+      if (needsUpdate) {
+        set({
+          periods: {
+            ...state.periods,
+            [periodId]: {
+              ...period,
+              routines: updatedRoutines,
+            },
+          },
+        });
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 기록 (Record) 관련 액션
+    // ═══════════════════════════════════════════════════════════
+    getRecord: (periodId: string) => {
+      const state = get();
+      return state.records[periodId] || null;
+    },
+
+    updateRecordContent: (periodId: string, content: string) => {
+      const state = get();
+      const now = new Date().toISOString();
+      const existing = state.records[periodId];
+
+      const updated: DailyRecord = existing
+        ? { ...existing, content, updatedAt: now }
+        : {
+          id: genId(),
+          periodId,
+          content,
+          highlights: [],
+          gratitude: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+      set({
+        records: { ...state.records, [periodId]: updated },
+      });
+    },
+
+    updateRecordMood: (periodId: string, mood: Mood | undefined) => {
+      const state = get();
+      const now = new Date().toISOString();
+      const existing = state.records[periodId];
+
+      const updated: DailyRecord = existing
+        ? { ...existing, mood, updatedAt: now }
+        : {
+          id: genId(),
+          periodId,
+          content: '',
+          mood,
+          highlights: [],
+          gratitude: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+      set({
+        records: { ...state.records, [periodId]: updated },
+      });
+    },
+
+    addHighlight: (periodId: string, text: string) => {
+      const state = get();
+      const now = new Date().toISOString();
+      const existing = state.records[periodId];
+
+      const updated: DailyRecord = existing
+        ? { ...existing, highlights: [...existing.highlights, text], updatedAt: now }
+        : {
+          id: genId(),
+          periodId,
+          content: '',
+          highlights: [text],
+          gratitude: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+      set({
+        records: { ...state.records, [periodId]: updated },
+      });
+    },
+
+    removeHighlight: (periodId: string, index: number) => {
+      const state = get();
+      const existing = state.records[periodId];
+      if (!existing) return;
+
+      const newHighlights = [...existing.highlights];
+      newHighlights.splice(index, 1);
+
+      set({
+        records: {
+          ...state.records,
+          [periodId]: {
+            ...existing,
+            highlights: newHighlights,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      });
+    },
+
+    addGratitude: (periodId: string, text: string) => {
+      const state = get();
+      const now = new Date().toISOString();
+      const existing = state.records[periodId];
+
+      const updated: DailyRecord = existing
+        ? { ...existing, gratitude: [...existing.gratitude, text], updatedAt: now }
+        : {
+          id: genId(),
+          periodId,
+          content: '',
+          highlights: [],
+          gratitude: [text],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+      set({
+        records: { ...state.records, [periodId]: updated },
+      });
+    },
+
+    removeGratitude: (periodId: string, index: number) => {
+      const state = get();
+      const existing = state.records[periodId];
+      if (!existing) return;
+
+      const newGratitude = [...existing.gratitude];
+      newGratitude.splice(index, 1);
+
+      set({
+        records: {
+          ...state.records,
+          [periodId]: {
+            ...existing,
+            gratitude: newGratitude,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      });
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // 연간 기념일 CRUD
+    // ═══════════════════════════════════════════════════════════════
+    addAnnualEvent: (event) => {
+      const newEvent: AnnualEvent = {
+        ...event,
+        id: genId(),
+        createdAt: new Date().toISOString(),
+      };
+      set({ annualEvents: [...get().annualEvents, newEvent] });
+    },
+
+    updateAnnualEvent: (id, updates) => {
+      set({
+        annualEvents: get().annualEvents.map((e) =>
+          e.id === id ? { ...e, ...updates } : e
+        ),
+      });
+    },
+
+    deleteAnnualEvent: (id) => {
+      set({
+        annualEvents: get().annualEvents.filter((e) => e.id !== id),
+      });
+    },
+
+    getUpcomingEvents: (days = 30) => {
+      const events = get().annualEvents;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      return events
+        .map((event) => {
+          // 올해 날짜로 계산
+          let nextDate = new Date(today.getFullYear(), event.month - 1, event.day);
+
+          // 이미 지났으면 내년으로
+          if (nextDate < today) {
+            nextDate = new Date(today.getFullYear() + 1, event.month - 1, event.day);
+          }
+
+          const daysUntil = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+          return { ...event, daysUntil, nextDate };
+        })
+        .filter((e) => e.daysUntil <= days)
+        .sort((a, b) => a.daysUntil - b.daysUntil);
+    },
+  })
+);
+
+// ═══════════════════════════════════════════════════════════════
+// 앱 시작 시 Supabase에서 데이터 로드
+// ═══════════════════════════════════════════════════════════════
+
+let isInitialized = false;
+
+export const initializeFromCloud = async () => {
+  if (isInitialized) return;
+  isInitialized = true;
+
+  const { syncFromCloud, isSupabaseConfigured } = await import('../lib/sync').then(m => ({
+    syncFromCloud: m.syncFromCloud,
+    isSupabaseConfigured: () => {
+      return import('../lib/supabase').then(s => s.isSupabaseConfigured());
+    }
+  }));
+
+  const configured = await import('../lib/supabase').then(s => s.isSupabaseConfigured());
+
+  if (!configured) {
+    console.log('[Sync] Supabase not configured. Data will NOT be saved.');
+    return;
+  }
+
+  console.log('[Sync] Loading data from Supabase...');
+  const cloudData = await syncFromCloud();
+
+  if (cloudData) {
+    usePlanStore.setState({
+      periods: cloudData.periods,
+      records: cloudData.records,
+      annualEvents: cloudData.annualEvents,
+    });
+    console.log('[Sync] Data loaded from Supabase');
+  } else {
+    console.log('[Sync] No cloud data found. Starting fresh.');
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 자동 동기화 구독 (상태 변경 시 클라우드에 저장)
+// ═══════════════════════════════════════════════════════════════
+
+// 브라우저 환경에서만 실행
+if (typeof window !== 'undefined') {
+  let prevState: { periods: unknown; records: unknown; annualEvents: unknown } | null = null;
+
+  usePlanStore.subscribe((state) => {
+    // 초기 로드 시에는 건너뛰기
+    if (!prevState) {
+      prevState = {
         periods: state.periods,
-        allItems: state.allItems,
         records: state.records,
         annualEvents: state.annualEvents,
-      }),
+      };
+      return;
     }
-  )
-);
+
+    // 변경 감지
+    const hasPeriodsChanged = state.periods !== prevState.periods;
+    const hasRecordsChanged = state.records !== prevState.records;
+    const hasEventsChanged = state.annualEvents !== prevState.annualEvents;
+
+    if (hasPeriodsChanged || hasRecordsChanged || hasEventsChanged) {
+      // 동적 임포트로 autoSyncToCloud 호출
+      import('../lib/sync').then(({ autoSyncToCloud }) => {
+        autoSyncToCloud(state.periods, state.records, state.annualEvents);
+      });
+
+      // 이전 상태 업데이트
+      prevState = {
+        periods: state.periods,
+        records: state.records,
+        annualEvents: state.annualEvents,
+      };
+    }
+  });
+}

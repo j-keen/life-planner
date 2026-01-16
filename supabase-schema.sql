@@ -42,11 +42,25 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Annual Events 테이블 (연간 기념일)
+CREATE TABLE IF NOT EXISTS annual_events (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  month INTEGER NOT NULL,
+  day INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  emoji TEXT,
+  note TEXT,
+  is_lunar BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- 인덱스
 CREATE INDEX IF NOT EXISTS idx_periods_level ON periods(level);
 CREATE INDEX IF NOT EXISTS idx_records_period_id ON records(period_id);
 CREATE INDEX IF NOT EXISTS idx_periods_updated ON periods(updated_at);
 CREATE INDEX IF NOT EXISTS idx_records_updated ON records(updated_at);
+CREATE INDEX IF NOT EXISTS idx_annual_events_month_day ON annual_events(month, day);
 
 -- RLS (Row Level Security) 비활성화 (개인용이므로)
 -- 만약 RLS를 사용하려면 아래 주석을 해제하고 정책을 추가하세요

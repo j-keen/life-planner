@@ -1,8 +1,41 @@
 import { getSupabase, isSupabaseConfigured } from './supabase';
-import { Period, DailyRecord } from '../types/plan';
+import { Period, DailyRecord, AnnualEvent } from '../types/plan';
 
 // ═══════════════════════════════════════════════════════════════
 // Supabase 동기화 유틸리티
+// ═══════════════════════════════════════════════════════════════
+
+// 동기화 상태
+export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+
+let syncStatus: SyncStatus = 'idle';
+let lastSyncTime: string | null = null;
+let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+// 동기화 상태 변경 리스너
+type SyncStatusListener = (status: SyncStatus, lastSync: string | null) => void;
+const syncStatusListeners: SyncStatusListener[] = [];
+
+export const subscribeSyncStatus = (listener: SyncStatusListener) => {
+  syncStatusListeners.push(listener);
+  // 현재 상태 즉시 알림
+  listener(syncStatus, lastSyncTime);
+  return () => {
+    const idx = syncStatusListeners.indexOf(listener);
+    if (idx > -1) syncStatusListeners.splice(idx, 1);
+  };
+};
+
+const notifySyncStatus = (status: SyncStatus) => {
+  syncStatus = status;
+  if (status === 'success') {
+    lastSyncTime = new Date().toLocaleTimeString('ko-KR');
+  }
+  syncStatusListeners.forEach(fn => fn(syncStatus, lastSyncTime));
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Period CRUD
 // ═══════════════════════════════════════════════════════════════
 
 // Period 저장
@@ -82,6 +115,10 @@ export const loadPeriodsFromCloud = async (): Promise<Record<string, Period> | n
   }
 };
 
+// ═══════════════════════════════════════════════════════════════
+// Record CRUD
+// ═══════════════════════════════════════════════════════════════
+
 // Record 저장
 export const saveRecordToCloud = async (record: DailyRecord): Promise<boolean> => {
   const supabase = getSupabase();
@@ -152,12 +189,110 @@ export const loadRecordsFromCloud = async (): Promise<Record<string, DailyRecord
   }
 };
 
+// ═══════════════════════════════════════════════════════════════
+// Annual Events CRUD
+// ═══════════════════════════════════════════════════════════════
+
+// AnnualEvent 저장
+export const saveAnnualEventToCloud = async (event: AnnualEvent): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+
+  try {
+    const { error } = await supabase
+      .from('annual_events')
+      .upsert({
+        id: event.id,
+        name: event.title,
+        month: event.month,
+        day: event.day,
+        type: event.type,
+        emoji: undefined, // 스키마에 있지만 타입에는 없음
+        note: event.note || null,
+        is_lunar: event.lunarDate || false,
+        created_at: event.createdAt,
+      }, {
+        onConflict: 'id',
+      });
+
+    if (error) {
+      console.error('Error saving annual event:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error saving annual event:', err);
+    return false;
+  }
+};
+
+// AnnualEvent 삭제
+export const deleteAnnualEventFromCloud = async (id: string): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+
+  try {
+    const { error } = await supabase
+      .from('annual_events')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting annual event:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error deleting annual event:', err);
+    return false;
+  }
+};
+
+// 모든 AnnualEvents 로드
+export const loadAnnualEventsFromCloud = async (): Promise<AnnualEvent[] | null> => {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('annual_events')
+      .select('*');
+
+    if (error) {
+      console.error('Error loading annual events:', error);
+      return null;
+    }
+
+    if (!data) return [];
+
+    return data.map(row => ({
+      id: row.id,
+      title: row.name,
+      type: row.type,
+      month: row.month,
+      day: row.day,
+      lunarDate: row.is_lunar || false,
+      note: row.note || undefined,
+      createdAt: row.created_at,
+    }));
+  } catch (err) {
+    console.error('Error loading annual events:', err);
+    return null;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
 // 전체 동기화 (로컬 → 클라우드)
+// ═══════════════════════════════════════════════════════════════
+
 export const syncToCloud = async (
   periods: Record<string, Period>,
-  records: Record<string, DailyRecord>
+  records: Record<string, DailyRecord>,
+  annualEvents?: AnnualEvent[]
 ): Promise<boolean> => {
   if (!isSupabaseConfigured()) return false;
+
+  notifySyncStatus('syncing');
 
   try {
     // Period 동기화
@@ -170,34 +305,155 @@ export const syncToCloud = async (
       await saveRecordToCloud(record);
     }
 
+    // AnnualEvent 동기화
+    if (annualEvents) {
+      for (const event of annualEvents) {
+        await saveAnnualEventToCloud(event);
+      }
+    }
+
     console.log('Cloud sync completed');
+    notifySyncStatus('success');
     return true;
   } catch (err) {
     console.error('Sync error:', err);
+    notifySyncStatus('error');
     return false;
   }
 };
 
+// ═══════════════════════════════════════════════════════════════
 // 전체 동기화 (클라우드 → 로컬)
+// ═══════════════════════════════════════════════════════════════
+
 export const syncFromCloud = async (): Promise<{
   periods: Record<string, Period>;
   records: Record<string, DailyRecord>;
+  annualEvents: AnnualEvent[];
 } | null> => {
   if (!isSupabaseConfigured()) return null;
 
+  notifySyncStatus('syncing');
+
   try {
-    const [periods, records] = await Promise.all([
+    const [periods, records, annualEvents] = await Promise.all([
       loadPeriodsFromCloud(),
       loadRecordsFromCloud(),
+      loadAnnualEventsFromCloud(),
     ]);
 
-    if (periods === null || records === null) {
+    if (periods === null || records === null || annualEvents === null) {
+      notifySyncStatus('error');
       return null;
     }
 
-    return { periods, records };
+    notifySyncStatus('success');
+    return { periods, records, annualEvents };
   } catch (err) {
     console.error('Sync error:', err);
+    notifySyncStatus('error');
     return null;
   }
 };
+
+// ═══════════════════════════════════════════════════════════════
+// 자동 동기화 (debounce 2000ms)
+// ═══════════════════════════════════════════════════════════════
+
+export const autoSyncToCloud = (
+  periods: Record<string, Period>,
+  records: Record<string, DailyRecord>,
+  annualEvents?: AnnualEvent[]
+) => {
+  if (!isSupabaseConfigured()) return;
+
+  // 이전 타이머 취소
+  if (syncDebounceTimer) {
+    clearTimeout(syncDebounceTimer);
+  }
+
+  // 2초 후 동기화 실행
+  syncDebounceTimer = setTimeout(async () => {
+    await syncToCloud(periods, records, annualEvents);
+  }, 2000);
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 앱 시작 시 초기 로드 (LWW 충돌 해결)
+// ═══════════════════════════════════════════════════════════════
+
+export const initSyncFromCloud = async (
+  localPeriods: Record<string, Period>,
+  localRecords: Record<string, DailyRecord>,
+  localAnnualEvents: AnnualEvent[]
+): Promise<{
+  periods: Record<string, Period>;
+  records: Record<string, DailyRecord>;
+  annualEvents: AnnualEvent[];
+} | null> => {
+  if (!isSupabaseConfigured()) {
+    console.log('Supabase not configured. Using local storage only.');
+    return null;
+  }
+
+  console.log('Initializing cloud sync...');
+  notifySyncStatus('syncing');
+
+  try {
+    const cloudData = await syncFromCloud();
+    if (!cloudData) {
+      // 클라우드 데이터 없음 → 로컬 데이터를 클라우드에 업로드
+      console.log('No cloud data. Uploading local data...');
+      await syncToCloud(localPeriods, localRecords, localAnnualEvents);
+      notifySyncStatus('success');
+      return null;
+    }
+
+    // LWW (Last-Write-Wins) 병합
+    const mergedPeriods = { ...localPeriods };
+    const mergedRecords = { ...localRecords };
+
+    // Period 병합: 클라우드 데이터가 있으면 사용 (초기 로드 시)
+    // 로컬에 없는 클라우드 데이터만 추가
+    for (const [id, cloudPeriod] of Object.entries(cloudData.periods)) {
+      if (!mergedPeriods[id]) {
+        mergedPeriods[id] = cloudPeriod;
+        console.log(`[Sync] Loaded period from cloud: ${id}`);
+      }
+      // 로컬에 이미 있으면 로컬 우선 (사용자가 마지막으로 작업한 기기)
+    }
+
+    // Record 병합
+    for (const [id, cloudRecord] of Object.entries(cloudData.records)) {
+      if (!mergedRecords[id]) {
+        mergedRecords[id] = cloudRecord;
+        console.log(`[Sync] Loaded record from cloud: ${id}`);
+      }
+    }
+
+    // AnnualEvent 병합: 클라우드 데이터 사용 (로컬 우선이 아닌 이유: 이벤트는 추가/삭제가 드묾)
+    const mergedAnnualEvents = cloudData.annualEvents.length > 0 
+      ? cloudData.annualEvents 
+      : localAnnualEvents;
+
+    console.log('Cloud sync initialized successfully.');
+    notifySyncStatus('success');
+
+    return {
+      periods: mergedPeriods,
+      records: mergedRecords,
+      annualEvents: mergedAnnualEvents,
+    };
+  } catch (err) {
+    console.error('Init sync error:', err);
+    notifySyncStatus('error');
+    return null;
+  }
+};
+
+// 현재 동기화 상태 조회
+export const getSyncStatus = (): { status: SyncStatus; lastSync: string | null } => ({
+  status: syncStatus,
+  lastSync: lastSyncTime,
+});
+

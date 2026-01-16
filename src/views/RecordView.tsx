@@ -118,7 +118,7 @@ function RecordView() {
     removeHighlight,
     addGratitude,
     removeGratitude,
-    periods,
+    // rerender-derived-state: periods 제거 (ensurePeriod로 현재 기간만 접근)
     ensurePeriod,
   } = usePlanStore();
 
@@ -234,7 +234,8 @@ function RecordView() {
           {currentLevel !== 'THIRTY_YEAR' && (
             <button
               onClick={drillUp}
-              className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 transition-colors text-amber-700 text-sm font-medium"
+              aria-label="상위 레벨로 이동"
+              className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 transition-colors text-amber-700 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
             >
               ↑ 상위
             </button>
@@ -248,7 +249,8 @@ function RecordView() {
                   const prevId = getAdjacentPeriodId(currentPeriodId, 'prev', baseYear);
                   if (prevId) navigateTo(prevId);
                 }}
-                className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm transition-all text-amber-700"
+                aria-label="이전 기간"
+                className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm transition-all text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               >
                 ◀
               </button>
@@ -260,7 +262,8 @@ function RecordView() {
                   const nextId = getAdjacentPeriodId(currentPeriodId, 'next', baseYear);
                   if (nextId) navigateTo(nextId);
                 }}
-                className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm transition-all text-amber-700"
+                aria-label="다음 기간"
+                className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm transition-all text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               >
                 ▶
               </button>
@@ -298,7 +301,8 @@ function RecordView() {
                 }
                 if (targetId) navigateTo(targetId);
               }}
-              className="px-3 py-1.5 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium"
+              aria-label={`${currentLevel === 'DAY' ? '오늘' : currentLevel === 'WEEK' ? '이번 주' : currentLevel === 'MONTH' ? '이번 달' : currentLevel === 'QUARTER' ? '이번 분기' : '올해'}로 이동`}
+              className="px-3 py-1.5 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
             >
               {currentLevel === 'DAY' && '오늘'}
               {currentLevel === 'WEEK' && '이번 주'}
@@ -310,14 +314,22 @@ function RecordView() {
 
           {/* 계획/기록 토글 */}
           <div className="ml-auto flex items-center">
-            <div className="flex bg-amber-100 rounded-lg p-1">
+            <div className="flex bg-amber-100 rounded-lg p-1" role="tablist" aria-label="뷰 모드">
               <button
                 onClick={() => viewMode === 'record' && toggleViewMode()}
-                className="px-4 py-1.5 rounded-md text-sm font-medium text-amber-600 hover:text-amber-700"
+                role="tab"
+                aria-selected={viewMode === 'plan'}
+                aria-label="계획 뷰로 전환"
+                className="px-4 py-1.5 rounded-md text-sm font-medium text-amber-600 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               >
                 계획
               </button>
-              <button className="px-4 py-1.5 rounded-md text-sm font-medium bg-white text-amber-700 shadow-sm">
+              <button
+                role="tab"
+                aria-selected={viewMode === 'record'}
+                aria-label="기록 뷰"
+                className="px-4 py-1.5 rounded-md text-sm font-medium bg-white text-amber-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              >
                 기록
               </button>
             </div>
@@ -331,7 +343,7 @@ function RecordView() {
             <label className="text-xs font-medium text-amber-600 mb-1 block">
               {MOOD_LABEL_BY_LEVEL[currentLevel]}
             </label>
-            <div className="flex gap-1 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex gap-1 p-2 bg-amber-50 border border-amber-200 rounded-lg" role="radiogroup" aria-label="기분 선택">
               {MOODS.map((mood) => {
                 const config = MOOD_CONFIG[mood];
                 const isSelected = record?.mood === mood;
@@ -339,13 +351,15 @@ function RecordView() {
                   <button
                     key={mood}
                     onClick={() => updateRecordMood(currentPeriodId, isSelected ? undefined : mood)}
+                    role="radio"
+                    aria-checked={isSelected}
+                    aria-label={config.label}
                     className={`
-                      flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-md transition-all
+                      flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500
                       ${isSelected ? 'bg-white ring-2 ring-amber-400 shadow-sm' : 'hover:bg-white/50'}
                     `}
-                    title={config.label}
                   >
-                    <span className="text-xl">{config.emoji}</span>
+                    <span className="text-xl" aria-hidden="true">{config.emoji}</span>
                     <span className={`text-[10px] font-medium ${isSelected ? 'text-amber-700' : 'text-gray-400'}`}>
                       {config.label}
                     </span>
@@ -367,9 +381,9 @@ function RecordView() {
                   {todoTotal > 0 ? Math.round((todoCompleted / todoTotal) * 100) : 0}%
                 </span>
               </div>
-              <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+              <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={todoTotal > 0 ? Math.round((todoCompleted / todoTotal) * 100) : 0} aria-valuemin={0} aria-valuemax={100} aria-label="할일 진행률">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all"
+                  className="h-full bg-blue-500 rounded-full transition-all motion-reduce:transition-none"
                   style={{ width: `${todoTotal > 0 ? (todoCompleted / todoTotal) * 100 : 0}%` }}
                 />
               </div>
@@ -388,9 +402,9 @@ function RecordView() {
                   {routineTotal > 0 ? Math.round((routineCompleted / routineTotal) * 100) : 0}%
                 </span>
               </div>
-              <div className="w-full h-2 bg-purple-100 rounded-full overflow-hidden">
+              <div className="w-full h-2 bg-purple-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={routineTotal > 0 ? Math.round((routineCompleted / routineTotal) * 100) : 0} aria-valuemin={0} aria-valuemax={100} aria-label="루틴 진행률">
                 <div
-                  className="h-full bg-purple-500 rounded-full transition-all"
+                  className="h-full bg-purple-500 rounded-full transition-all motion-reduce:transition-none"
                   style={{ width: `${routineTotal > 0 ? (routineCompleted / routineTotal) * 100 : 0}%` }}
                 />
               </div>
@@ -410,10 +424,11 @@ function RecordView() {
           {/* 헤더 */}
           <div className="p-3 border-b border-amber-100 bg-gray-50">
             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1">
-              <span>📋</span> 이 기간의 계획
+              <span aria-hidden="true">📋</span> 이 기간의 계획
               <button
                 onClick={toggleViewMode}
-                className="ml-auto text-xs text-amber-600 hover:text-amber-700"
+                aria-label="계획 뷰로 전환"
+                className="ml-auto text-xs text-amber-600 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded px-1"
               >
                 계획 보기 →
               </button>
@@ -598,14 +613,16 @@ function RecordView() {
                 className={`flex flex-col rounded-xl border ${q.borderColor} ${q.bgColor} overflow-hidden`}
               >
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-white/50">
-                  <span className="text-lg">{q.emoji}</span>
-                  <span className="text-sm font-semibold text-gray-700">{q.title}</span>
+                  <span className="text-lg" aria-hidden="true">{q.emoji}</span>
+                  <label htmlFor={`record-${q.id}`} className="text-sm font-semibold text-gray-700">{q.title}</label>
                 </div>
                 <textarea
+                  id={`record-${q.id}`}
+                  name={`record-${q.id}`}
                   value={answers[q.id] || ''}
                   onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                   placeholder={q.placeholder}
-                  className="flex-1 w-full p-3 bg-transparent outline-none resize-none text-sm text-gray-700 placeholder-gray-400"
+                  className="flex-1 w-full p-3 bg-transparent outline-none resize-none text-sm text-gray-700 placeholder-gray-400 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400"
                 />
               </div>
             ))}
@@ -630,11 +647,12 @@ function RecordView() {
                   key={index}
                   className="group flex items-start gap-1.5 p-2 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors"
                 >
-                  <span className="text-rose-400 text-sm">♥</span>
+                  <span className="text-rose-400 text-sm" aria-hidden="true">♥</span>
                   <span className="flex-1 text-xs text-gray-700">{item}</span>
                   <button
                     onClick={() => removeGratitude(currentPeriodId, index)}
-                    className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all text-xs"
+                    aria-label={`"${item}" 삭제`}
+                    className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all text-xs focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                   >
                     ×
                   </button>
@@ -647,11 +665,13 @@ function RecordView() {
               )}
               <input
                 type="text"
+                name="add-gratitude"
                 value={gratitudeInput}
                 onChange={(e) => setGratitudeInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddGratitude()}
                 placeholder="+ 감사한 것..."
-                className="w-full px-2 py-1.5 text-xs bg-white border border-dashed border-rose-300 rounded-lg focus:outline-none focus:border-rose-500 placeholder-gray-400"
+                aria-label="감사한 것 추가"
+                className="w-full px-2 py-1.5 text-xs bg-white border border-dashed border-rose-300 rounded-lg focus-visible:outline-none focus-visible:border-rose-500 focus-visible:ring-2 focus-visible:ring-rose-200 placeholder-gray-400"
               />
             </div>
           </div>
@@ -670,11 +690,12 @@ function RecordView() {
                   key={index}
                   className="group flex items-start gap-1.5 p-2 bg-yellow-50 hover:bg-yellow-100 rounded-lg border border-yellow-200 transition-colors"
                 >
-                  <span className="text-yellow-500 text-sm">★</span>
+                  <span className="text-yellow-500 text-sm" aria-hidden="true">★</span>
                   <span className="flex-1 text-xs text-gray-700">{highlight}</span>
                   <button
                     onClick={() => removeHighlight(currentPeriodId, index)}
-                    className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all text-xs"
+                    aria-label={`"${highlight}" 삭제`}
+                    className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-500 hover:text-white transition-all text-xs focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                   >
                     ×
                   </button>
@@ -687,11 +708,13 @@ function RecordView() {
               )}
               <input
                 type="text"
+                name="add-highlight"
                 value={highlightInput}
                 onChange={(e) => setHighlightInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddHighlight()}
                 placeholder="+ 성취한 것, 좋았던 일..."
-                className="w-full px-2 py-1.5 text-xs bg-white border border-dashed border-yellow-300 rounded-lg focus:outline-none focus:border-yellow-500 placeholder-gray-400"
+                aria-label="하이라이트 추가"
+                className="w-full px-2 py-1.5 text-xs bg-white border border-dashed border-yellow-300 rounded-lg focus-visible:outline-none focus-visible:border-yellow-500 focus-visible:ring-2 focus-visible:ring-yellow-200 placeholder-gray-400"
               />
             </div>
           </div>

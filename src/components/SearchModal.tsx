@@ -105,16 +105,21 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="search-modal-title"
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
         {/* 검색 입력 */}
         <div className="p-4 border-b border-slate-200">
+          <h2 id="search-modal-title" className="sr-only">검색</h2>
           <div className="flex items-center gap-3">
             <svg
               className="w-5 h-5 text-slate-400 flex-shrink-0"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -126,15 +131,18 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
             <input
               ref={inputRef}
               type="text"
+              name="search-query"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="할일, 루틴, 메모, 목표, 기록 검색..."
-              className="flex-1 text-lg outline-none bg-transparent placeholder:text-slate-400"
+              aria-label="검색어 입력"
+              className="flex-1 text-lg outline-none bg-transparent placeholder:text-slate-400 focus-visible:outline-none"
             />
             <button
               onClick={onClose}
-              className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded bg-slate-100"
+              aria-label="검색 닫기 (ESC)"
+              className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
             >
               ESC
             </button>
@@ -162,7 +170,8 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
             <button
               key={`${result.type}-${result.periodId}-${index}`}
               onClick={() => handleResultClick(result)}
-              className={`w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-b-0 transition-colors ${
+              aria-label={`${getTypeLabel(result.type)}: ${result.content}`}
+              className={`w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-b-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
                 index === selectedIndex ? 'bg-blue-50' : ''
               }`}
             >
