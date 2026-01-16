@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -433,8 +433,9 @@ function EditableText({
 
 // ═══════════════════════════════════════════════════════════════
 // 드래그 가능한 아이템 컴포넌트 (트리 구조 지원)
+// rerender-memo: 부모 리렌더 시 불필요한 리렌더링 방지
 // ═══════════════════════════════════════════════════════════════
-function DraggableItem({
+const DraggableItem = memo(function DraggableItem({
   item,
   from,
   onToggle,
@@ -697,12 +698,13 @@ function DraggableItem({
       )}
     </div>
   );
-}
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 셀 내 드래그 가능한 아이템 컴포넌트
+// rerender-memo: 부모 리렌더 시 불필요한 리렌더링 방지
 // ═══════════════════════════════════════════════════════════════
-function CellDraggableItem({
+const CellDraggableItem = memo(function CellDraggableItem({
   item,
   slotId,
   onToggle,
@@ -823,7 +825,7 @@ function CellDraggableItem({
       </button>
     </div>
   );
-}
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 할일 카테고리 드롭 영역
@@ -875,8 +877,9 @@ function RoutineCategoryDropZone({
 
 // ═══════════════════════════════════════════════════════════════
 // 드롭 가능한 그리드 셀 컴포넌트
+// rerender-memo: 부모 리렌더 시 불필요한 리렌더링 방지
 // ═══════════════════════════════════════════════════════════════
-function GridCell({
+const GridCell = memo(function GridCell({
   slotId,
   label,
   items,
@@ -979,7 +982,7 @@ function GridCell({
                   onToggle={() => onToggleItem(item.id)}
                   onDelete={() => onDeleteItem(item.id)}
                   onOpenNote={() => setNoteModalItem(item)}
-                  onToggleExpand={() => toggleExpand(item.id, 'slot', slotId)}
+                  onToggleExpand={() => toggleExpand(item.id, item.sourceType || 'todo')}
                   depth={depth}
                   hasChildren={!!hasChildren}
                 />
@@ -1012,12 +1015,13 @@ function GridCell({
       )}
     </div>
   );
-}
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 시간대 슬롯 내 드래그 가능한 아이템 컴포넌트
+// rerender-memo: 부모 리렌더 시 불필요한 리렌더링 방지
 // ═══════════════════════════════════════════════════════════════
-function TimeSlotDraggableItem({
+const TimeSlotDraggableItem = memo(function TimeSlotDraggableItem({
   item,
   slotId,
   onToggle,
@@ -1101,12 +1105,13 @@ function TimeSlotDraggableItem({
       </button>
     </div>
   );
-}
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 시간대 슬롯 셀 컴포넌트 (일 뷰 전용)
+// rerender-memo: 부모 리렌더 시 불필요한 리렌더링 방지
 // ═══════════════════════════════════════════════════════════════
-function TimeSlotCell({
+const TimeSlotCell = memo(function TimeSlotCell({
   slotId,
   timeSlot,
   items,
@@ -1212,7 +1217,7 @@ function TimeSlotCell({
       )}
     </div>
   );
-}
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 아이템 추가 입력 컴포넌트 (간소화)

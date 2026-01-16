@@ -12,7 +12,8 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 const DEBOUNCE_MS = 3000;
 
 export function useAutoSync() {
-  const { periods, records, setPeriods, setRecords } = usePlanStore();
+  const periods = usePlanStore((state) => state.periods);
+  const records = usePlanStore((state) => state.records);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoad = useRef(true);
   const lastSyncedData = useRef<string>('');
@@ -25,11 +26,14 @@ export function useAutoSync() {
       const cloudData = await syncFromCloud();
       if (cloudData) {
         // 클라우드 데이터가 있으면 로컬에 병합
-        const mergedPeriods = { ...periods, ...cloudData.periods };
-        const mergedRecords = { ...records, ...cloudData.records };
+        const currentState = usePlanStore.getState();
+        const mergedPeriods = { ...currentState.periods, ...cloudData.periods };
+        const mergedRecords = { ...currentState.records, ...cloudData.records };
 
-        setPeriods(mergedPeriods);
-        setRecords(mergedRecords);
+        usePlanStore.setState({
+          periods: mergedPeriods,
+          records: mergedRecords,
+        });
 
         // 마지막 동기화 데이터 저장 (변경 감지용)
         lastSyncedData.current = JSON.stringify({ periods: mergedPeriods, records: mergedRecords });
@@ -38,7 +42,7 @@ export function useAutoSync() {
     } catch (err) {
       console.error('[AutoSync] Load error:', err);
     }
-  }, [periods, records, setPeriods, setRecords]);
+  }, []);
 
   // 클라우드로 업로드 (디바운스)
   const uploadToCloud = useCallback(async () => {
