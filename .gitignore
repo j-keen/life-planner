@@ -40,5 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# mcp-server build output
+mcp-server/dist/
+mcp-server/node_modules/
+
 .vercel
 .env*.local

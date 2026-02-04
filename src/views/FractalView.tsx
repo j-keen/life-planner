@@ -445,6 +445,7 @@ const DraggableItem = memo(function DraggableItem({
   onAddSubItem,
   onToggleExpand,
   onLongPress,
+  onOpenNote,
   progress,
   depth = 0,
   isHidden = false,
@@ -458,6 +459,7 @@ const DraggableItem = memo(function DraggableItem({
   onAddSubItem: (content: string) => void;
   onToggleExpand: () => void;
   onLongPress?: () => void;
+  onOpenNote?: () => void;
   progress?: number;
   depth?: number;
   isHidden?: boolean;
@@ -573,6 +575,10 @@ const DraggableItem = memo(function DraggableItem({
           e.preventDefault();
           setShowColorMenu(true);
         }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (onOpenNote) onOpenNote();
+        }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
@@ -615,6 +621,21 @@ const DraggableItem = memo(function DraggableItem({
           <span className="text-[10px] font-bold text-purple-600 flex-shrink-0">
             {remaining}/{item.targetCount}
           </span>
+        )}
+
+        {/* 메모 뱃지 */}
+        {item.note && onOpenNote && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenNote();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="text-amber-500 hover:text-amber-600 text-[10px] flex-shrink-0"
+            title="메모 보기"
+          >
+            📝
+          </button>
         )}
 
         {/* 호버 시 나타나는 액션 버튼들 */}
@@ -1304,6 +1325,8 @@ export default function FractalView() {
   const [mobileTab, setMobileTab] = useState<'todo' | 'grid' | 'routine'>('grid');
   const [isMobile, setIsMobile] = useState(false);
   const [assignModalItem, setAssignModalItem] = useState<{ item: Item; from: 'todo' | 'routine' } | null>(null);
+  const [sidebarNoteItem, setSidebarNoteItem] = useState<Item | null>(null);
+  const [sidebarNoteLocation, setSidebarNoteLocation] = useState<'todo' | 'routine'>('todo');
 
   useEffect(() => {
     setMounted(true);
@@ -1856,6 +1879,10 @@ export default function FractalView() {
                           onAddSubItem={(content) => addSubItem(item.id, content, 'todo')}
                           onToggleExpand={() => toggleExpand(item.id, 'todo')}
                           onLongPress={() => setAssignModalItem({ item, from: 'todo' })}
+                          onOpenNote={() => {
+                            setSidebarNoteItem(item);
+                            setSidebarNoteLocation('todo');
+                          }}
                           progress={getProgress(item.id)}
                           depth={getDepth(item)}
                           isHidden={isHidden(item)}
@@ -1998,6 +2025,10 @@ export default function FractalView() {
                           onAddSubItem={(content) => addSubItem(item.id, content, 'routine')}
                           onToggleExpand={() => toggleExpand(item.id, 'routine')}
                           onLongPress={() => setAssignModalItem({ item, from: 'routine' })}
+                          onOpenNote={() => {
+                            setSidebarNoteItem(item);
+                            setSidebarNoteLocation('routine');
+                          }}
                           progress={getProgress(item.id)}
                           depth={getDepth(item)}
                           isHidden={isHidden(item)}
@@ -2084,6 +2115,18 @@ export default function FractalView() {
           onAssignToSlot={assignToSlot}
           onAssignToTimeSlot={assignToTimeSlot}
           onClose={() => setAssignModalItem(null)}
+        />
+      )}
+
+      {/* 사이드바 노트 모달 */}
+      {sidebarNoteItem && (
+        <NoteModal
+          item={sidebarNoteItem}
+          onSave={(note) => {
+            updateItemNote(sidebarNoteItem.id, note, sidebarNoteLocation);
+            setSidebarNoteItem(null);
+          }}
+          onClose={() => setSidebarNoteItem(null)}
         />
       )}
 
