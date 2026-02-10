@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { usePlanStore } from '../store/usePlanStore';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { syncToCloud, syncFromCloud, subscribeSyncStatus, SyncStatus } from '../lib/sync';

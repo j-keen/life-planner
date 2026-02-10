@@ -95,16 +95,7 @@ export async function loadSettings(): Promise<AppSettings> {
   return localSettings;
 }
 
-// API 키 가져오기 (캐시된 버전)
 let cachedApiKey: string | null = null;
-
-export async function getGeminiApiKey(): Promise<string | null> {
-  if (cachedApiKey) return cachedApiKey;
-
-  const settings = await loadSettings();
-  cachedApiKey = settings.geminiApiKey || null;
-  return cachedApiKey;
-}
 
 // API 키 캐시 초기화
 export function clearApiKeyCache(): void {

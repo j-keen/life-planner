@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePlanStore } from '../store/usePlanStore';
 import { searchAllData, SearchResult, getTypeLabel, getTypeBadgeColor } from '../lib/search';
 import { LEVEL_CONFIG } from '../types/plan';

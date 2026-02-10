@@ -2,23 +2,23 @@
 import { isHoliday, getHolidayNames } from '@hyunbinseo/holidays-kr';
 
 // 특정 날짜가 공휴일인지 확인
-export function isKoreanHoliday(date: Date): boolean {
+function isKoreanHoliday(date: Date): boolean {
   return isHoliday(date);
 }
 
 // 특정 날짜의 공휴일 이름 반환 (없으면 null)
-export function getHolidayName(date: Date): string | null {
+function getHolidayName(date: Date): string | null {
   const names = getHolidayNames(date);
   return names ? names[0] : null;
 }
 
 // 토요일인지 확인 (0=일, 6=토)
-export function isSaturday(date: Date): boolean {
+function isSaturday(date: Date): boolean {
   return date.getDay() === 6;
 }
 
 // 일요일인지 확인
-export function isSunday(date: Date): boolean {
+function isSunday(date: Date): boolean {
   return date.getDay() === 0;
 }
 

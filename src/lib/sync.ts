@@ -226,28 +226,6 @@ export const saveAnnualEventToCloud = async (event: AnnualEvent): Promise<boolea
   }
 };
 
-// AnnualEvent 삭제
-export const deleteAnnualEventFromCloud = async (id: string): Promise<boolean> => {
-  const supabase = getSupabase();
-  if (!supabase) return false;
-
-  try {
-    const { error } = await supabase
-      .from('annual_events')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Error deleting annual event:', error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error('Error deleting annual event:', err);
-    return false;
-  }
-};
-
 // 모든 AnnualEvents 로드
 export const loadAnnualEventsFromCloud = async (): Promise<AnnualEvent[] | null> => {
   const supabase = getSupabase();
@@ -378,82 +356,4 @@ export const autoSyncToCloud = (
   }, 2000);
 };
 
-// ═══════════════════════════════════════════════════════════════
-// 앱 시작 시 초기 로드 (LWW 충돌 해결)
-// ═══════════════════════════════════════════════════════════════
-
-export const initSyncFromCloud = async (
-  localPeriods: Record<string, Period>,
-  localRecords: Record<string, DailyRecord>,
-  localAnnualEvents: AnnualEvent[]
-): Promise<{
-  periods: Record<string, Period>;
-  records: Record<string, DailyRecord>;
-  annualEvents: AnnualEvent[];
-} | null> => {
-  if (!isSupabaseConfigured()) {
-    console.log('Supabase not configured. Using local storage only.');
-    return null;
-  }
-
-  console.log('Initializing cloud sync...');
-  notifySyncStatus('syncing');
-
-  try {
-    const cloudData = await syncFromCloud();
-    if (!cloudData) {
-      // 클라우드 데이터 없음 → 로컬 데이터를 클라우드에 업로드
-      console.log('No cloud data. Uploading local data...');
-      await syncToCloud(localPeriods, localRecords, localAnnualEvents);
-      notifySyncStatus('success');
-      return null;
-    }
-
-    // LWW (Last-Write-Wins) 병합
-    const mergedPeriods = { ...localPeriods };
-    const mergedRecords = { ...localRecords };
-
-    // Period 병합: 클라우드 데이터가 있으면 사용 (초기 로드 시)
-    // 로컬에 없는 클라우드 데이터만 추가
-    for (const [id, cloudPeriod] of Object.entries(cloudData.periods)) {
-      if (!mergedPeriods[id]) {
-        mergedPeriods[id] = cloudPeriod;
-        console.log(`[Sync] Loaded period from cloud: ${id}`);
-      }
-      // 로컬에 이미 있으면 로컬 우선 (사용자가 마지막으로 작업한 기기)
-    }
-
-    // Record 병합
-    for (const [id, cloudRecord] of Object.entries(cloudData.records)) {
-      if (!mergedRecords[id]) {
-        mergedRecords[id] = cloudRecord;
-        console.log(`[Sync] Loaded record from cloud: ${id}`);
-      }
-    }
-
-    // AnnualEvent 병합: 클라우드 데이터 사용 (로컬 우선이 아닌 이유: 이벤트는 추가/삭제가 드묾)
-    const mergedAnnualEvents = cloudData.annualEvents.length > 0 
-      ? cloudData.annualEvents 
-      : localAnnualEvents;
-
-    console.log('Cloud sync initialized successfully.');
-    notifySyncStatus('success');
-
-    return {
-      periods: mergedPeriods,
-      records: mergedRecords,
-      annualEvents: mergedAnnualEvents,
-    };
-  } catch (err) {
-    console.error('Init sync error:', err);
-    notifySyncStatus('error');
-    return null;
-  }
-};
-
-// 현재 동기화 상태 조회
-export const getSyncStatus = (): { status: SyncStatus; lastSync: string | null } => ({
-  status: syncStatus,
-  lastSync: lastSyncTime,
-});
 

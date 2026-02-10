@@ -385,18 +385,3 @@ export interface AnnualEvent {
   createdAt: string;          // ISO date string
 }
 
-// 전역 상태
-export interface AppState {
-  currentLevel: Level;
-  currentPeriodId: string;
-  baseYear: number;  // 30세 기준 연도
-  periods: Record<string, Period>;
-  // 모든 항목을 ID로 조회 (달성률 계산용)
-  allItems: Record<string, Item>;
-  // 기록 데이터
-  records: Record<string, DailyRecord>;
-  // 현재 뷰 모드
-  viewMode: 'plan' | 'record';
-  // 연간 기념일 목록
-  annualEvents: AnnualEvent[];
-}
