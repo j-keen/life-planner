@@ -2,8 +2,13 @@ import Papa from 'papaparse';
 
 // HTML 태그 제거 및 보안 처리
 const sanitize = (text: string): string => {
-    if (typeof text !== 'string') return text;
-    return text
+    if (typeof text !== 'string') return '';
+    // CSV formula injection defense: prefix dangerous characters
+    let result = text;
+    if (/^[=+\-@\t\r]/.test(result)) {
+        result = "'" + result;
+    }
+    return result
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .trim()
@@ -27,6 +32,7 @@ export const exportToCSV = <T>(data: T[], filename: string, headers: string[]) =
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
 };
 

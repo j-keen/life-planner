@@ -79,7 +79,7 @@ export default function NotepadView() {
         togglePin(id);
     };
 
-    // 간단한 마크다운 렌더링 (볼드, 이탤릭, 링크, 리스트)
+    // 간단한 마크다운 렌더링 (볼드, 이탤릭, 코드, 리스트) - XSS-safe
     const renderMarkdown = (text: string) => {
         if (!text) return '(내용 없음)';
 
@@ -101,14 +101,51 @@ export default function NotepadView() {
                 return <li key={i} className="ml-4 list-disc">{line.slice(2)}</li>;
             }
 
-            // 볼드/이탤릭
-            let processed = line
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.+?)\*/g, '<em>$1</em>')
-                .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded">$1</code>');
+            // 볼드/이탤릭/코드 - React 요소로 안전하게 렌더링
+            const renderInlineFormatting = (text: string): React.ReactNode[] => {
+                const parts: React.ReactNode[] = [];
+                let remaining = text;
+                let keyIdx = 0;
 
-            if (processed !== line) {
-                return <p key={i} className="mb-1" dangerouslySetInnerHTML={{ __html: processed }} />;
+                while (remaining.length > 0) {
+                    // 볼드 **text**
+                    const boldMatch = remaining.match(/^([\s\S]*?)\*\*(.+?)\*\*([\s\S]*)/);
+                    if (boldMatch) {
+                        if (boldMatch[1]) parts.push(<span key={keyIdx++}>{boldMatch[1]}</span>);
+                        parts.push(<strong key={keyIdx++}>{boldMatch[2]}</strong>);
+                        remaining = boldMatch[3];
+                        continue;
+                    }
+
+                    // 이탤릭 *text*
+                    const italicMatch = remaining.match(/^([\s\S]*?)\*(.+?)\*([\s\S]*)/);
+                    if (italicMatch) {
+                        if (italicMatch[1]) parts.push(<span key={keyIdx++}>{italicMatch[1]}</span>);
+                        parts.push(<em key={keyIdx++}>{italicMatch[2]}</em>);
+                        remaining = italicMatch[3];
+                        continue;
+                    }
+
+                    // 인라인 코드 `text`
+                    const codeMatch = remaining.match(/^([\s\S]*?)`(.+?)`([\s\S]*)/);
+                    if (codeMatch) {
+                        if (codeMatch[1]) parts.push(<span key={keyIdx++}>{codeMatch[1]}</span>);
+                        parts.push(<code key={keyIdx++} className="bg-gray-100 px-1 rounded">{codeMatch[2]}</code>);
+                        remaining = codeMatch[3];
+                        continue;
+                    }
+
+                    // 나머지 텍스트
+                    parts.push(<span key={keyIdx++}>{remaining}</span>);
+                    break;
+                }
+
+                return parts;
+            };
+
+            // 포맷팅 문자가 있으면 인라인 렌더링
+            if (/\*\*.+?\*\*|\*.+?\*|`.+?`/.test(line)) {
+                return <p key={i} className="mb-1">{renderInlineFormatting(line)}</p>;
             }
 
             // 빈 줄

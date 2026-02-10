@@ -144,6 +144,24 @@ export function searchAllData(
           }
         }
       }
+
+      // timeSlots 내의 항목도 검색 (DAY 레벨)
+      if (period.timeSlots) {
+        for (const timeSlotItems of Object.values(period.timeSlots)) {
+          for (const item of timeSlotItems) {
+            if (item.content.toLowerCase().includes(lowerQuery)) {
+              results.push({
+                type: 'todo',
+                periodId,
+                periodLevel: period.level,
+                content: item.content,
+                highlight: highlightMatch(item.content, query),
+                item,
+              });
+            }
+          }
+        }
+      }
     }
 
     // 루틴 검색

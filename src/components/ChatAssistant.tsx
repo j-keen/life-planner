@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { usePlanStore } from '../store/usePlanStore';
-import { loadSettings } from '../lib/settings';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -14,7 +13,6 @@ function ChatAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [apiKey, setApiKey] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // rerender-derived-state: 필요한 데이터만 선택적으로 구독
@@ -22,15 +20,6 @@ function ChatAssistant() {
   const currentLevel = usePlanStore((state) => state.currentLevel);
   const period = usePlanStore((state) => state.periods[state.currentPeriodId]);
   const record = usePlanStore((state) => state.records[state.currentPeriodId]);
-
-  // API 키 로드
-  useEffect(() => {
-    loadSettings().then((settings) => {
-      if (settings.geminiApiKey) {
-        setApiKey(settings.geminiApiKey);
-      }
-    });
-  }, []);
 
   // 스크롤 자동 이동
   useEffect(() => {
@@ -83,7 +72,6 @@ function ChatAssistant() {
           message: userMessage,
           context,
           history: messages.slice(-10), // 최근 10개 메시지만
-          apiKey: apiKey || undefined, // 저장된 API 키 전달
         }),
       });
 
